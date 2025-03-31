@@ -1,0 +1,30 @@
+.model 140396656523344
+.inputs cin b a
+.outputs cout
+.topo
+.model 140396657885008
+.type selector
+.inputs cin b a
+.outputs cout
+.rows 6
+.columns 8
+.i 1 1
+.i 0 5
+.o cout 4
+.s 0 cin
+.s 1 ~b
+.s 2 b
+.s 3 ~cin
+.s 4 ~a
+.s 5 b
+.s 6 a
+.s 7 ~b
+.xbar
+0	0	0	0	0	1	1	1
+1	0	0	0	0	1	0	0
+0	1	1	0	1	0	0	0
+1	0	1	1	0	0	0	1
+0	0	0	0	1	0	1	0
+0	1	0	1	0	0	0	0
+.end
+.end

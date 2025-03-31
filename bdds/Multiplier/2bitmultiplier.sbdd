@@ -1,0 +1,10 @@
+.model 2bitmultiplier
+.inputs a0 a1
+.outputs f3 f1 f0 f2
+.order a0 a1
+.bdd
+a 3 4 a0 f1
+9 3 4 a1 f2
+3 -1 -1 1
+4 -1 -1 0 f3 f0
+.end

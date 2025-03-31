@@ -1,0 +1,43 @@
+.model four_bit_adder
+.inputs a2 a0 cin b3 b2 a3 a1 b0 b1
+.outputs sum0 sum3 sum2 cout sum1
+.order a3 b3 a2 b2 a1 b1 a0 b0 cin
+.bdd
+279 274 2cc a3 cout
+3ce 2cf 26f a3 sum3
+2cf 271 2bd b3
+2cc 271 25d b3
+26f 2bd 271 b3
+274 25c 271 b3
+2bd 2c2 26a a2
+271 344 2b6 a2
+273 2c8 26c a2 sum2
+2b6 3d4 25d b2
+26c 33c 3d4 b2
+344 25c 3d4 b2
+2c8 3d4 33c b2
+26a 33c 25c b2
+2c2 25d 33c b2
+33a 3e1 2c0 a1 sum1
+3d4 269 26d a1
+33c 3d2 3e4 a1
+2c0 2d6 2d2 b1
+269 25c 2d2 b1
+3d2 25d 2d6 b1
+26d 2d2 25d b1
+3e4 2d6 25c b1
+3e1 2d2 2d6 b1
+33e 343 2d1 a0 sum0
+2d2 2f8 3da a0
+2d6 2ad 3cd a0
+343 2f7 299 b0
+2ad 25d 299 b0
+2d1 299 2f7 b0
+2f8 25c 2f7 b0
+3cd 299 25c b0
+3da 2f7 25d b0
+299 25d 25c cin
+2f7 25c 25d cin
+25c -1 -1 1
+25d -1 -1 0
+.end

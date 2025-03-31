@@ -1,0 +1,16 @@
+.model full_adder
+.inputs a0 b0 cin
+.outputs cout sum0
+.order a0 b0 cin
+.bdd
+2d4 2d2 2d3 a0 cout
+2d9 2d7 2d8 a0 sum0
+2d2 2c6 2ce b0
+2d3 2ce 2c7 b0
+2d8 2d5 2ce b0
+2d7 2ce 2d5 b0
+2d5 2c7 2c6 cin
+2ce 2c6 2c7 cin
+2c6 -1 -1 1
+2c7 -1 -1 0
+.end

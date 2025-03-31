@@ -1,0 +1,83 @@
+.model five_bit_adder
+.inputs a0 a2 a4 cin b3 b2 a1 a3 b0 b4 b1
+.outputs sum0 sum3 sum2 sum4 cout sum1
+.order a1 b1 a0 b0 cin a2 b2 a4 b4 a3 b3
+.bdd
+4a2 499 30b a1 sum4
+4ab 38e 5cf a1 cout
+5e3 5da 363 a1 sum3
+490 390 5c7 a1 sum2
+358 392 5e7 a1 sum1
+5e7 2a7 399 b1
+499 4a0 36f b1
+38e 497 2b9 b1
+30b 36f 3fb b1
+5da 48f 355 b1
+390 495 5dd b1
+5cf 2b9 327 b1
+392 399 2a7 b1
+363 355 314 b1
+5c7 5dd 2a5 b1
+2a7 353 5d0 a0
+399 5df 37f a0
+36f 3f8 382 a0
+2b9 5fc 36c a0
+3f3 37d 5f6 a0 sum0
+355 5d9 4a4 a0
+5dd 342 2ac a0
+36c 2b5 327 b0
+5fc 497 2b5 b0
+37f 380 297 b0
+5df 296 380 b0
+5f6 4aa 380 b0
+4a4 5d4 314 b0
+5d9 48f 5d4 b0
+2ac 2c3 2a5 b0
+342 495 2c3 b0
+5d0 4aa 296 b0
+353 297 4aa b0
+37d 380 4aa b0
+382 5c8 3fb b0
+3f8 4a0 5c8 b0
+4aa 297 296 cin
+2b5 497 327 cin
+5d4 48f 314 cin
+2c3 495 2a5 cin
+380 296 297 cin
+5c8 4a0 3fb cin
+495 34a 34c a2
+3fb 5f2 5f0 a2
+327 35e 362 a2
+314 309 30a a2
+48f 34b 309 a2
+2a5 34c 34a a2
+4a0 5fd 5f2 a2
+497 5ce 35e a2
+34c 297 296 b2
+34a 296 297 b2
+309 34b 30a b2
+5f2 5fd 5f0 b2
+35e 5ce 362 b2
+5fd 315 4a6 a4
+5ce 388 372 a4
+5f0 386 49c a4
+362 352 391 a4
+372 2c5 297 b4
+386 4a1 5d8 b4
+391 4a1 297 b4
+4a6 5c9 2c5 b4
+49c 5d8 4a1 b4
+388 296 2c5 b4
+352 296 4a1 b4
+315 2c5 5c9 b4
+34b 2c6 35a a3
+5c9 297 35a a3
+4a1 2c6 297 a3
+2c5 296 2c6 a3
+5d8 35a 296 a3
+30a 35a 2c6 a3
+35a 297 296 b3
+2c6 296 297 b3
+296 -1 -1 1
+297 -1 -1 0
+.end

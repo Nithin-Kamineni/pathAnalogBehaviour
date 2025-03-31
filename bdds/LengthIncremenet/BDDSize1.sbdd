@@ -1,0 +1,13 @@
+.model BDDSize1
+.inputs c a b
+.outputs s
+.order a b c
+.bdd
+1e 1c 1d a s
+1d 1a 19 b
+1c 19 1a b
+1a 13 12 c
+19 12 13 c
+12 -1 -1 1
+13 -1 -1 0
+.end

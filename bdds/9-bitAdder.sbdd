@@ -1,0 +1,164 @@
+.model nine_bit_adder
+.inputs cin a3 a7 b7 b2 a2 b4 b3 a0 b5 b6 b0 a4 b1 a6 b8 a8 a5 a1
+.outputs sum6 sum8 sum2 sum0 sum3 sum4 sum7 cout sum1 sum5
+.order b8 a8 a7 b7 b1 a1 a0 b0 cin a2 b2 b3 a3 b4 a4 a5 b5 b6 a6
+.bdd
+c5a7 b018 abba b8 cout
+c646 c644 c645 b8 sum8
+abba c0ad 13f6d a8
+c645 c643 c0ad a8
+b018 13f6c c0ad a8
+c644 c0ad c643 a8
+c643 c641 c642 a7
+c640 c63e c63f a7 sum7
+c0ad c60a c602 a7
+c63f c63c c0e3 b7
+c63e c0e3 c63c b7
+c642 c63c 13f6c b7
+c60a 13f6c c0e3 b7
+c602 c0e3 13f6d b7
+c641 13f6d c63c b7
+c63c c63a c63b b1
+be7b c5ed ae3b b1 sum5
+c0e3 acfc c020 b1
+c189 c5f6 a953 b1 sum3
+c569 b571 acec b1 sum4
+c627 c625 c626 b1 sum6
+b3a8 b03c c5f7 b1 sum2
+c618 c607 c5da b1 sum1
+c626 c624 c5e2 a1
+c5f7 c813 b588 a1
+acfc c7ef ac2c a1
+c5f6 ae40 beb5 a1
+c5da c606 c5f4 a1
+b571 c5f5 c5f0 a1
+c63b c639 c635 a1
+ae3b c88c c5d7 a1
+c020 ac2c acf2 a1
+a953 beb5 ad7c a1
+acec c5f0 c5db a1
+c625 c61c c624 a1
+b03c c1b2 c813 a1
+c607 c5f4 c606 a1
+c63a c634 c639 a1
+c5ed afab c88c a1
+b2b7 be80 b157 a0 sum0
+c624 c622 c623 a0
+c813 b85d c63d a0
+c606 a933 c252 a0
+c639 c637 c638 a0
+c88c c614 c615 a0
+ac2c be83 c616 a0
+beb5 be53 b199 a0
+c5f4 c619 c2fc a0
+c5f0 c6ce c661 a0
+c2fc a98a 13f6d b0
+a933 13f6d c60d b0
+c616 beec acf2 b0
+be80 a98a c60d b0
+be83 c7ef beec b0
+b199 bebb ad7c b0
+be53 ae40 bebb b0
+c661 13f8c c5db b0
+c6ce c5f5 13f8c b0
+c252 c60d 13f6c b0
+c619 13f6c a98a b0
+b157 c60d a98a b0
+c623 c621 c5e2 b0
+c63d af07 b588 b0
+c622 c61c c621 b0
+b85d c1b2 af07 b0
+c638 c636 c635 b0
+c637 c634 c636 b0
+c615 c61e c5d7 b0
+c614 afab c61e b0
+c60d 13f6d 13f6c cin
+beec c7ef acf2 cin
+bebb ae40 ad7c cin
+13f8c c5f5 c5db cin
+a98a 13f6c 13f6d cin
+c621 c61c c5e2 cin
+af07 c1b2 b588 cin
+c636 c634 c635 cin
+c61e afab c5d7 cin
+c5e2 c61a b439 a2
+b588 c7d6 c617 a2
+c61c c5d8 c61a a2
+c635 c633 c632 a2
+c634 c631 c633 a2
+c5d7 b07e aeac a2
+afab c658 b07e a2
+acf2 c597 c225 a2
+c7ef c18e c597 a2
+ad7c c5f9 b83e a2
+ae40 aea3 c5f9 a2
+c1b2 c617 c7d6 a2
+c5db ace2 c608 a2
+c5f5 c613 ace2 a2
+c61a c5d8 b439 b2
+c7d6 13f6d 13f6c b2
+c633 c631 c632 b2
+b07e c658 aeac b2
+c597 c18e c225 b2
+c5f9 aea3 b83e b2
+c617 13f6c 13f6d b2
+ace2 c613 c608 b2
+c613 b1c1 c620 b3
+b439 c5d6 c5f3 b3
+aea3 c5ec c088 b3
+c5d8 c60c c5d6 b3
+c632 c630 c62f b3
+c631 c62e c630 b3
+aeac c2c3 c6af b3
+c658 c61f c2c3 b3
+c225 b277 c5fe b3
+c18e b2ea b277 b3
+b83e c088 c5ec b3
+c608 c620 c89e b3
+c088 13f6d 13f6c a3
+c5d6 c60c c5f3 a3
+c5ec 13f6c 13f6d a3
+c630 c62e c62f a3
+c2c3 c61f c6af a3
+b277 b2ea c5fe a3
+c620 b1c1 c89e a3
+c62f c62d c62c b4
+c62e c62b c62d b4
+c6af ae07 c7e3 b4
+c61f c5f1 ae07 b4
+c5fe bf1a c514 b4
+b2ea b1b6 bf1a b4
+c89e c5dd c5e1 b4
+c5f3 c601 c75a b4
+c60c c578 c601 b4
+b1c1 c5e1 c5dd b4
+c62d c62b c62c a4
+c5dd 13f6d 13f6c a4
+ae07 c5f1 c7e3 a4
+bf1a b1b6 c514 a4
+c5e1 13f6c 13f6d a4
+c601 c578 c75a a4
+c75a b127 b43f a5
+c578 b329 b127 a5
+c62c c62a c629 a5
+c62b c628 c62a a5
+c7e3 c0c5 af8d a5
+c514 c61b c5d5 a5
+b1b6 aa9b c61b a5
+c5f1 af8d c0c5 a5
+c0c5 13f6d 13f6c b5
+b127 b329 b43f b5
+c62a c628 c629 b5
+af8d 13f6c 13f6d b5
+c61b aa9b c5d5 b5
+c5d5 13f8f 13f6d b6
+c629 c5ea 13f6c b6
+b43f c5ea 13f8f b6
+b329 13f8f c5ea b6
+c628 13f6d c5ea b6
+aa9b 13f6c 13f8f b6
+c5ea 13f6d 13f6c a6
+13f8f 13f6c 13f6d a6
+13f6c -1 -1 1
+13f6d -1 -1 0
+.end

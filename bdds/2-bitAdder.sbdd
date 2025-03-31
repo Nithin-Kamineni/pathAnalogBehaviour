@@ -1,0 +1,25 @@
+.model two_bit_adder
+.inputs a0 cin a1 b0 b1
+.outputs sum0 sum1 cout
+.order a1 b1 a0 b0 cin
+.bdd
+4b 29 28 a1 cout
+34 2b 2c a1 sum1
+29 18 30 b1
+2c 2a 30 b1
+28 30 19 b1
+2b 30 2a b1
+49 4a 2e a0 sum0
+30 24 31 a0
+2a 4d 22 a0
+4d 19 21 b0
+4a 25 21 b0
+31 25 19 b0
+24 18 25 b0
+2e 21 25 b0
+22 21 18 b0
+21 19 18 cin
+25 18 19 cin
+18 -1 -1 1
+19 -1 -1 0
+.end

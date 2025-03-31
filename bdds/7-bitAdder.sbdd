@@ -1,0 +1,139 @@
+.model seven_bit_adder
+.inputs cin b2 b4 b3 a5 a3 a0 b5 b6 a1 b0 a2 a4 b1 a6
+.outputs sum6 cout sum1 sum5 sum2 sum0 sum3 sum4
+.order a3 b3 a1 b1 a0 b0 cin a2 b2 a6 b6 a4 b4 a5 b5
+.bdd
+f62b7 f66f6 13fe8a a3 sum4
+f66f4 13fe04 13fe30 a3 sum5
+13febf 13fdef f6169 a3 cout
+13fdec f6d24 f6cc2 a3 sum3
+f66c7 13fe93 f6d1f a3 sum6
+13fe04 f6c9d f6401 b3
+f6cc2 f6175 f670b b3
+f6d1f f6c21 f63f0 b3
+13fe8a f69d2 f6cfc b3
+13fe30 f6401 f6194 b3
+13fe93 13fe4d f6c21 b3
+f6169 13fe21 f6d34 b3
+13fdef f6197 13fe21 b3
+f6d24 f670b f6175 b3
+f66f6 f69d0 f69d2 b3
+f6175 13fe8f f6cb7 a1
+f6c21 13fcea f6cb6 a1
+f69d2 13fe9a f69a4 a1
+f670b f62b4 f6c52 a1
+f6401 f6190 13fe01 a1
+13fe17 f699c f6c88 a1 sum2
+13fe21 f63e9 f69c8 a1
+f616e f674d f6c26 a1 sum1
+f6c88 f63ef 13fe3d b1
+f69c8 13fdcf 13fcfa b1
+f6c26 f6ce5 f66f7 b1
+13fe8f f63ee f6ca4 b1
+13fcea 13fecf 13fecc b1
+13fe9a f61a6 f66d9 b1
+f62b4 f670d f6216 b1
+f6190 f63f5 f6ca0 b1
+f6cb7 f6ca4 f6422 b1
+f699c 13fe16 f63ef b1
+f6cb6 13fecc f6ccb b1
+f63e9 13fe14 13fdcf b1
+f69a4 f66d9 13fe87 b1
+f674d f66f7 f6ce5 b1
+f6c52 f6216 f6170 b1
+13fe01 f6ca0 13fe42 b1
+f61b5 f615a 13feb8 a0 sum0
+f63ef f69da f69a3 a0
+13fdcf 13fe1a f6995 a0
+f6ce5 13fd9e f697d a0
+f66f7 f6c6c f6d07 a0
+f6ca4 f69c1 f6705 a0
+13fecc f66cf f6c9a a0
+f66d9 f6976 f6d0a a0
+f6216 13fe27 f696b a0
+f6ca0 13fed6 13fdfa a0
+f6c6c 13faf6 13fe1b b0
+f6705 f63f3 f6422 b0
+f69c1 f63ee f63f3 b0
+f6c9a 13fd76 f6ccb b0
+f66cf 13fecf 13fd76 b0
+f6d0a f6ca2 13fe87 b0
+f6976 f61a6 f6ca2 b0
+f696b 13fe26 f6170 b0
+13fe27 f670d 13fe26 b0
+13fdfa 13fe07 13fe42 b0
+13fed6 f63f5 13fe07 b0
+13feb8 f63f9 13fe1b b0
+f6d07 13fe1b 13faf7 b0
+f69a3 f69d6 13fe3d b0
+f69da 13fe16 f69d6 b0
+13fd9e 13faf7 f63f9 b0
+f6995 13fcfc 13fcfa b0
+13fe1a 13fe14 13fcfc b0
+f697d f63f9 13faf6 b0
+f615a 13fe1b f63f9 b0
+f63f9 13faf7 13faf6 cin
+f63f3 f63ee f6422 cin
+13fd76 13fecf f6ccb cin
+f6ca2 f61a6 13fe87 cin
+13fe26 f670d f6170 cin
+13fe07 f63f5 13fe42 cin
+f69d6 13fe16 13fe3d cin
+13fcfc 13fe14 13fcfa cin
+13fe1b 13faf6 13faf7 cin
+13fecf 13fe4d f66d7 a2
+13fe16 13fd66 f63e3 a2
+f670d 13faf6 13fd66 a2
+13fe14 f6197 f66e0 a2
+f6170 13fd66 13faf7 a2
+f6ccb f66d7 f63f0 a2
+13fe87 f640c f6cfc a2
+f61a6 f69d0 f640c a2
+13fe42 f6735 f6194 a2
+f63f5 f6c9d f6735 a2
+13fe3d f63e3 13fd66 a2
+13fcfa f66e0 f6d34 a2
+f63ee 13faf7 f63e3 a2
+f6422 f63e3 13faf6 a2
+f63e3 13faf7 13faf6 b2
+f66d7 13fe4d f63f0 b2
+f66e0 f6197 f6d34 b2
+13fd66 13faf6 13faf7 b2
+f640c f69d0 f6cfc b2
+f6735 f6c9d f6194 b2
+f63f0 f61a2 13fd5d a6
+f6197 13feb2 f69cc a6
+f6d34 f66da f6c28 a6
+13fe4d 13feaf f616d a6
+13feaf 13fe76 f6cf7 b6
+13fd5d 13fd0a f6ce4 b6
+f61a2 f6ce4 13fd0a b6
+13feb2 13faf6 13fe76 b6
+f66da 13faf6 f6ce4 b6
+f69cc 13fe76 13faf7 b6
+f6c28 f6ce4 13faf7 b6
+f616d f6cf7 13fe76 b6
+f6cfc f6c30 f69a5 a4
+f6194 f62ae f66d4 a4
+f6ce4 f6cff f6d2e a4
+f6c9d f6725 f62ae a4
+13fe76 f697f f6cff a4
+f69d0 f69a5 f6c30 a4
+13fd0a 13fe09 13fe22 a4
+f6cf7 13feec 13fe09 a4
+f6c30 13faf7 13faf6 b4
+f62ae f6725 f66d4 b4
+f6cff f697f f6d2e b4
+f69a5 13faf6 13faf7 b4
+13fe09 13feec 13fe22 b4
+13fe22 f6c8d 13faf6 a5
+f697f 13faf6 13fedf a5
+f6725 13fedf f6c8d a5
+13feec 13faf7 f6c8d a5
+f66d4 f6c8d 13fedf a5
+f6d2e 13fedf 13faf7 a5
+f6c8d 13faf7 13faf6 b5
+13fedf 13faf6 13faf7 b5
+13faf6 -1 -1 1
+13faf7 -1 -1 0
+.end

@@ -1,0 +1,33 @@
+.model BDDSize5
+.inputs a b g f e c d
+.outputs s
+.order c a b d f g e
+.bdd
+208 1ff 207 c s
+207 205 206 a
+1ff 1fd 1fe a
+1fe 2c4 1f9 b
+205 201 203 b
+206 2c3 1f7 d
+1f9 1f4 1f7 d
+201 2bd 200 d
+1fd 2bd 1f3 d
+203 202 1f3 d
+2c4 2c3 1f5 d
+200 2c2 2be f
+1f5 2c0 1e8 f
+1f7 268 1e9 f
+2c3 2c8 1f8 f
+1f4 2be 2c2 f
+1f3 1f8 2c8 f
+202 1e9 268 f
+2bd 1e8 2c0 f
+2be 1e9 1e8 g
+2c0 1f8 2c2 g
+2c8 1e8 1e9 g
+268 2c2 1f8 g
+2c2 1e9 1e8 e
+1f8 1e8 1e9 e
+1e8 -1 -1 1
+1e9 -1 -1 0
+.end

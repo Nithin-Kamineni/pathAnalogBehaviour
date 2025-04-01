@@ -1,0 +1,20 @@
+.model BDDSize3
+.inputs a b e c d
+.outputs s
+.order e b d c a
+.bdd
+c7 e9 c5 e s
+e9 e8 c6 b
+c5 c0 c4 b
+e8 b5 c1 d
+c6 ea be d
+c0 be e5 d
+c4 c1 b6 d
+e5 eb be c
+ea be eb c
+c1 b5 b6 c
+eb b6 b5 a
+be b5 b6 a
+b5 -1 -1 1
+b6 -1 -1 0
+.end

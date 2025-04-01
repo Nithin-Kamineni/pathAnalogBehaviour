@@ -1,0 +1,15 @@
+.model BDDSize5
+.inputs a b g f e c d
+.outputs s
+.order a b c d e f g
+.bdd
+6d 6c 5d a s
+6c 6b 5d b
+6b 6a 5d c
+6a 69 5d d
+69 68 5d e
+68 67 5d f
+67 5c 5d g
+5c -1 -1 1
+5d -1 -1 0
+.end

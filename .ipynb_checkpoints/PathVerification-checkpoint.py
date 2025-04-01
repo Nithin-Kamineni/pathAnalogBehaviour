@@ -20,8 +20,8 @@ import scipy.sparse.linalg as spla
 from itertools import product
 import seaborn as sns
 from collections import deque
-
-
+import uuid
+import copy
 
 class PATH:
     def __init__(self, CrossbarGridSize = 16):
@@ -43,6 +43,7 @@ class PATH:
         
         self.BDD = None
         self.Graph = None
+        self.Graphs = []
         self.Expressions = None
         self.NodeIDMap = None
         self.InputNode = None
@@ -526,7 +527,129 @@ class PATH:
         # Update the graph process phase
         self.GraphProcessPhase = "2. Graph Transformation"
 
+    def get_longest_distances_from_root(self, graph, root):
+        longest_distances = {node: float('-inf') for node in graph.nodes}
+        longest_distances[root] = 0
+    
+        for node in nx.topological_sort(graph):
+            for neighbor in graph.successors(node):
+                longest_distances[neighbor] = max(
+                    longest_distances[neighbor],
+                    longest_distances[node] + 1
+                )
+    
+        return longest_distances
 
+    def getDistanceFromRoot(self, graph, root=None):
+        # Create a deepcopy so original graph is not modified
+        graph_copy = copy.deepcopy(graph)
+    
+        # If root is not given, find a node with in-degree 0 (assuming a DAG)
+        if root is None:
+            root_candidates = [n for n, d in graph_copy.in_degree() if d == 0]
+            if not root_candidates:
+                raise ValueError("No root node found (in-degree 0)")
+            root = root_candidates[0]  # Use the first one found
+    
+        # Calculate shortest path lengths from the root
+        # distances = nx.single_source_shortest_path_length(graph_copy, root)
+        distances = self.get_longest_distances_from_root(graph_copy, root)
+    
+        # Set distance as an attribute for each node
+        for node, dist in distances.items():
+            graph_copy.nodes[node]['distance'] = dist
+    
+        return graph_copy
+
+    def split_graphs_with_height(self, graph, max_height=11):
+            
+        # Nodes within max height
+        top_nodes = [n for n, data in graph.nodes(data=True) if data.get('distance', 0) <= max_height]
+
+        print(top_nodes)
+    
+        top_graph = graph.subgraph(top_nodes).copy()
+    
+        # Nodes that exceed the height
+        overflow_nodes = [n for n, data in graph.nodes(data=True) if data.get('distance', 0) > max_height]
+    
+        split_graphs = []
+        visited = set()
+        split_ids = []
+
+        print('len(overflow_nodes)',len(overflow_nodes))
+    
+        for node in overflow_nodes:
+            if node in visited:
+                continue
+    
+            # Find nearest ancestor at max_height
+            current = node
+            split_root = None
+            while True:
+                preds = list(graph.predecessors(current))
+                if not preds:
+                    break
+                for parent in preds:
+                    parent_distance = graph.nodes[parent].get('distance', 0)
+                    if parent_distance == max_height:
+                        split_root = parent
+                        break
+                if split_root:
+                    break
+                current = preds[0]
+    
+            if split_root is None:
+                continue  # Skip if no proper split point
+    
+            # Generate a unique ID to mark continuity
+            split_id = str(uuid.uuid4())
+    
+            # Add split_id to split_root (leaf in top_graph)
+            if split_root in top_graph.nodes:
+                top_graph.nodes[split_root]['split_id'] = split_id
+    
+            # Get descendants of this node
+            descendants = nx.descendants(graph, node)
+            descendants.add(node)
+            subgraph_nodes = set(descendants)
+    
+            subgraph = graph.subgraph(subgraph_nodes).copy()
+    
+            # Add split_id to root of subgraph
+            subgraph.nodes[node]['split_id'] = split_id
+    
+            visited.update(subgraph_nodes)
+            split_graphs.append(subgraph)
+            split_ids.append(split_id)
+    
+        return split_graphs, top_graph, split_ids
+    
+    def GraphSplitting(self):
+        #get distance of each node from root node
+
+        for node in self.Graph.nodes:
+            self.Graph.nodes[node]['split_id'] = None
+            
+        unprocessed_graphs = [self.Graph]
+        processed_graphs = []
+        while(unprocessed_graphs):
+            unprocessed_graph = unprocessed_graphs.pop(0)
+            measured_graph = self.getDistanceFromRoot(unprocessed_graph) #attribute to each node has ditance from root to each node
+
+            print([measured_graph.nodes[node]['distance'] for node in measured_graph.nodes])
+            #split_graphs has wordLineID in root node or start
+            #processed_graph has wprdLineID in leaf or end
+            split_graphs, processed_graph, split_ids = self.split_graphs_with_height(measured_graph)
+
+            processed_graphs.append(processed_graph)
+            unprocessed_graphs.extend(split_graphs)
+
+            print('split_ids',split_ids)
+        #traverse through the graph and split the graph where the height constraing fails
+        
+    
+    
     def GraphCompression(self):
         # Create a dictionary to store U2 node literals as keys and input node literals as values in a list
         compression_dict = {}
@@ -711,7 +834,7 @@ class PATH:
             edge_label = data.get('label', 'No label')
             print(f"{next(iter(self.NodeIDMap[u][1]))[0]}({u}) -[{edge_label}]-> {next(iter(self.NodeIDMap[v][1]))[0]}({v})")
 
-    def VisuvaliseNetworkXGraph(self, bipartite=False):
+    def VisuvaliseNetworkXGraph(self, bipartite=False, saveImg=False):
         # Initialize position dictionary
         pos = {}
         
@@ -790,7 +913,24 @@ class PATH:
         
         # Display the graph
         plt.title(self.GraphProcessPhase if self.GraphProcessPhase is not None else "Graph with Node Attributes and Edge Labels")
-        plt.show()
+        
+        if(saveImg):
+
+            # Adjust figure size for larger graphs, with reasonable base and adjustment
+            x_coords = [p[0] for p in pos.values()]
+            y_coords = [p[1] for p in pos.values()]
+            x_range = max(x_coords) - min(x_coords) if x_coords else 0
+            y_range = max(y_coords) - min(y_coords) if y_coords else 0
+            
+            base_width = 10  # Reasonable base width
+            base_height = 8 # Reasonable base height
+            width_adjustment = x_range * 1.5 # Adjust width based on node spread
+            height_adjustment = y_range * 1.5 # Adjust height based on node spread
+            fig = plt.figure(figsize=(base_width + width_adjustment, base_height + height_adjustment))
+            print("saving image...")
+            plt.savefig("Graph1.png", dpi=200, format="PNG", bbox_inches='tight')  # Use tight bbox to prevent cropping
+        else:
+            plt.show()
 
     def VisuvaliseCrossbar(self, initialisedCrossbar=None):
         if(initialisedCrossbar==None):
@@ -1029,9 +1169,9 @@ class PATH:
             
             # Iterate over each row in the truth table
             for idx, row in df.iterrows():
-                if(idx%1000!=0):
-                    continue
-                print(idx)
+                # if(idx%1000!=0):
+                #     continue
+                # print(idx)
                 input_assignment = {var: int(row[var]) for var in input_columns}  # Convert inputs to dictionary
                 expected_outputs = {expr: int(row[expr]) for expr in output_columns}  # Expected output values
     

@@ -1,0 +1,13 @@
+.model BDDSize3
+.inputs a b e c d
+.outputs s
+.order a b c d e
+.bdd
+403 3f6 402 a s
+402 3f6 401 b
+401 3f6 400 c
+400 3f6 3ff d
+3ff 3f6 3f7 e
+3f6 -1 -1 1
+3f7 -1 -1 0
+.end

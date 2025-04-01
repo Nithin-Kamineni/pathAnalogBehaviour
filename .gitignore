@@ -2,3 +2,6 @@ Data
 Adders/Data
 AndOperations/Data
 Benchmarks/revlib/Data
+OrOperations/revlib/Data
+XorOperations/revlib/Data
+TestOperations/revlib/Data

@@ -1,0 +1,16 @@
+.model BDDSize6
+.inputs a b g f e c h d
+.outputs s
+.order a b c d e f g h
+.bdd
+3a3 3a2 391 a s
+3a2 3a1 391 b
+3a1 3a0 391 c
+3a0 39f 391 d
+39f 39e 391 e
+39e 39d 391 f
+39d 39c 391 g
+39c 390 391 h
+390 -1 -1 1
+391 -1 -1 0
+.end

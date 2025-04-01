@@ -1,0 +1,22 @@
+.model BDDSize4
+.inputs a b f e c d
+.outputs s
+.order e c a f b d
+.bdd
+13c 138 13b e s
+13b 139 13a c
+138 131 136 c
+13a 12f 11d a
+136 133 134 a
+139 134 133 a
+131 11d 12f a
+12f 168 12b f
+134 12c 165 f
+168 11d 11c b
+133 12c 165 b
+12b 11c 11d b
+12c 11d 11c d
+165 11c 11d d
+11c -1 -1 1
+11d -1 -1 0
+.end

@@ -1,0 +1,49 @@
+.model BDDSize7
+.inputs a b i g f e c h d
+.outputs s
+.order c a b d e f h i g
+.bdd
+2e8 2df 2e7 c s
+2df 2cd 2de a
+2e7 2e5 2e6 a
+2de 2d9 2dd b
+2e5 2e2 2e4 b
+2d9 2d5 2d8 d
+2e6 2d5 2dc d
+2dd 2db 2dc d
+2cd 564 2d1 d
+2e4 2e3 2d1 d
+2e2 564 2e1 d
+564 56c 2ce e
+2e1 2e0 2ce e
+2d1 56c 57e e
+2e3 2e0 57e e
+2d5 2d2 2d4 e
+2dc 2da 2d4 e
+2d8 2d2 2d7 e
+2db 2da 2d7 e
+2e0 2c8 578 f
+2d2 57b 3e3 f
+2d7 2d6 3e3 f
+2d4 57b 2d3 f
+2da 2d6 2d3 f
+56c 2c7 3f1 f
+2ce 2c7 578 f
+57e 2c8 3f1 f
+2c7 2b8 3e4 h
+3e3 3e4 2b8 h
+2d6 3f4 2c6 h
+578 2c6 3f4 h
+2d3 579 2b9 h
+57b 3e2 2c9 h
+3f1 2c9 3e2 h
+2c8 2b9 579 h
+3f4 2b9 2b8 i
+579 2c6 2c9 i
+3e2 2b8 2b9 i
+3e4 2c9 2c6 i
+2c6 2b9 2b8 g
+2c9 2b8 2b9 g
+2b8 -1 -1 1
+2b9 -1 -1 0
+.end

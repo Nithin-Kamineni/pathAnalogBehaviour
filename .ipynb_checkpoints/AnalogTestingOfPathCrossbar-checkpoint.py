@@ -430,7 +430,6 @@ class AnalogTestingOfPathCrossbar:
                 elif(expected_outputs[label]==1):
                     print('111111', label, outputCurrent)
                     onesCurrents.append(outputCurrent)
-                    # print('path',self.AllIdealPathOfCurrent[frozenset(input_assignment.items())][label]["OutputPath"])
                     numberofDevices = self.AllIdealPathOfCurrent[frozenset(input_assignment.items())][label]["lengthOfDevices"]
                     if(numberofDevices not in self.AdderNumDevicesToCurrents_Map):
                         self.AdderNumDevicesToCurrents_Map[numberofDevices] = []

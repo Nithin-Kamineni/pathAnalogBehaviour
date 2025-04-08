@@ -60,12 +60,14 @@ class Bus:
 #Have a topological plot of the graph (Optional)
 
 class PATH_Design_Logic_Verification:
-    def __init__(self, Bus, Design_Map, CrossbarGridSize = 1024):
+    def __init__(self, Bus, Design_Map, MainBDD_For_GoldenModel, CrossbarGridSize = 1024):
         self.Design_Map = Design_Map
         self.Bus = Bus
 
         self.RowOffSet = 0
         self.ColOffSet = 0
+
+        self.MainBDD_For_GoldenModel = MainBDD_For_GoldenModel
 
         self.SelectorLineLabels = []
 
@@ -126,11 +128,16 @@ class PATH_Design_Logic_Verification:
 
         #Create a Output dictionary for storing the output result
         self.Output = {}
+
+        for graph in self.Design_Map:
+            for outputLabel in self.Design_Map[graph]['OutputLine_Map']:
+                if self.Design_Map[graph]['OutputLine_Map'][outputLabel].split()[0]!='leaf':
+                    self.Output[self.Design_Map[graph]['OutputLine_Map'][outputLabel].split()[0]]=0
         
         #Sending signal to run the first crossbar after setting selector lines in programed crossbar
         self.Bus.send_signal(None)
 
-        print('self.Output', self.Output)
+        return self.Output
 
     def TimeMultiplexCrossbar(self, Crossbar_, nonOutputBitlines):
         Crossbar = [row.copy() for row in Crossbar_]
@@ -156,7 +163,7 @@ class PATH_Design_Logic_Verification:
                 Stack.append([(wordLineInput, j), [(wordLineInput, j)], 'w'])  # Use a list for ordered visited nodes
 
         # print('Crossbar[0]',Crossbar[0])
-        print('Stack',Stack)
+        # print('Stack',Stack)
         # print('outputBitline',outputBitline)
         while Stack:
             [(path_i, path_j), visited, last_curr] = Stack.pop()  # Pop from the stack (LIFO)
@@ -173,21 +180,21 @@ class PATH_Design_Logic_Verification:
                         Stack.append([(path_i, i), new_visited, 'w'])
             # print('path_j', path_i, path_j)
             if(path_j==outputBitline):
-                print('outputBitline',outputBitline)
-                print('visited',visited)
+                # print('outputBitline',outputBitline)
+                # print('visited',visited)
                 return True
         return False
         
-    def Execute(self, wordLineInput, OutputLine_Map):
+    def Execute(self, wordLineInput, OutputLine_Map, testing_Individual_Design_Cases=False):
 
-        print('wordLineInput', wordLineInput)
-        print('OutputLine_Map', OutputLine_Map)
+        # print('wordLineInput', wordLineInput)
+        # print('OutputLine_Map', OutputLine_Map)
 
         design_ID_List = []
         for outputLine in OutputLine_Map:
             outputBitline = self.SelectorLinesOutputLabelsToBitlineIndex[outputLine]
 
-            print('outputBitline',outputBitline, OutputLine_Map[outputLine])
+            # print('outputBitline',outputBitline, OutputLine_Map[outputLine])
 
             nonOutputBitlines = [self.SelectorLinesOutputLabelsToBitlineIndex[OutputLineLabel] for OutputLineLabel in OutputLine_Map if outputBitline!=self.SelectorLinesOutputLabelsToBitlineIndex[OutputLineLabel]]
 
@@ -198,7 +205,15 @@ class PATH_Design_Logic_Verification:
             
             # code to execute crossbar
             foundPath = self.find_path_execution_in_crossbar(MultiplexedCrossbar, wordLineInput, outputBitline)
-            print('foundPath',foundPath)
+            # print('foundPath',foundPath)
+
+            if(testing_Individual_Design_Cases):
+                if(OutputLine_Map[outputLine].split()[0]=="leaf"):
+                    self.Output[outputLine]=1 if foundPath else 0
+                else:
+                    self.Output[OutputLine_Map[outputLine]]=1 if foundPath else 0
+                continue
+            
             if(foundPath):
                 if(OutputLine_Map[outputLine].split()[0]=="leaf"):
                     design_ID_List.append(OutputLine_Map[outputLine].split()[1])
@@ -207,13 +222,79 @@ class PATH_Design_Logic_Verification:
             else:
                 if(OutputLine_Map[outputLine].split()[0]=="leaf"):
                     pass
-                else:
-                    self.Output[OutputLine_Map[outputLine]] = 0
 
-        print('design_ID_List',design_ID_List)
+        #Sending output to the testbench
+        if(testing_Individual_Design_Cases):
+            return self.Output
+            
         # send signals to bus
+        # print('design_ID_List',design_ID_List)
         for design_ID in design_ID_List:
             self.Bus.send_signal(design_ID)
+
+    def GoldenModel(self, input_assignment, graph=None):
+
+        singleDesignCheck = True
+        if(graph is None):
+            singleDesignCheck = False
+            graph = self.MainBDD_For_GoldenModel
+    
+        # Helper: decide if a U2 node can be passed
+        def is_passable_u2(node):
+            literal = graph.nodes[node].get('literal', '')
+            if literal.startswith('~') or literal.startswith('-'):
+                var = literal[1:]
+                return input_assignment.get(var) == 0
+            else:
+                return input_assignment.get(literal) == 1
+    
+        # Start from all nodes with in-degree 0
+        start_nodes = [n for n in graph.nodes if graph.in_degree(n) == 0]
+        visited_outputs = {graph.nodes[n].get('ExpressionRoot'):0 for n in graph.nodes if graph.nodes[n].get('ExpressionRoot') is not None}
+        if(singleDesignCheck):
+            split_outputs_map = {}
+            for n in graph.nodes:
+                if graph.nodes[n].get('split_id') is not None and graph.nodes[n].get('split_id').split()[0]=='leaf':
+                    successors = list(graph.successors(n))
+
+                    for successor in successors:
+                        if('O' in graph.nodes[successor].get('literal')):
+                            split_outputs_map[graph.nodes[n].get('split_id').split()[1]] = graph.nodes[successor].get('literal')
+                            visited_outputs[graph.nodes[successor].get('literal')] = 0
+    
+        for start_node in start_nodes:
+            stack = [(start_node, [start_node])]
+    
+            while stack:
+                current_node, path = stack.pop()
+                node_data = graph.nodes[current_node]
+                bipartite_type = node_data.get('BipartitePart')
+                literal = node_data.get('literal', '')
+                expression_root = node_data.get('ExpressionRoot')
+    
+                if expression_root is not None:
+                    visited_outputs[expression_root] = 1
+                    continue
+                if(singleDesignCheck):
+                    if node_data.get('split_id') is not None and node_data.get('split_id').split()[0] == 'leaf':
+                        output_node_label = split_outputs_map[node_data.get('split_id').split()[1]]
+                        visited_outputs[output_node_label] = 1
+    
+                for succ in graph.successors(current_node):
+                    succ_data = graph.nodes[succ]
+                    succ_type = succ_data.get('BipartitePart')
+    
+                    # U1 nodes are always passable
+                    if succ_type == 'U1':
+                        stack.append((succ, path + [succ]))
+    
+                    # U2 nodes need validation
+                    elif succ_type == 'U2' and is_passable_u2(succ):
+                        stack.append((succ, path + [succ]))
+    
+        # print("Computed Outputs:", visited_outputs)
+        return visited_outputs
+
         
     def VisuvaliseCrossbar(self, initialisedCrossbar):
 
@@ -484,3 +565,147 @@ class PATH_Design_Logic_Verification:
             print(f"Crossbar verification completed. Total mismatches: {mismatches}")
             
             return mismatches
+
+    def RunRandomTestCases(self, num_tests=10, RunAllTests=False):
+        # Step 1: Extract unique positive variable names from SelectorLineLabels
+        input_vars = set()
+        SelectorLineLabels = self.SelectorLineLabels.copy()
+        for label in SelectorLineLabels:
+            var = label.replace('~', '')
+            if 'O' not in var:
+                input_vars.add(var)
+        input_vars = list(input_vars)
+        
+        test_results = []
+
+        # Step 2: Generate all combinations if RunAllTests is True
+        if RunAllTests:
+            all_combinations = list(itertools.product([0, 1], repeat=len(input_vars)))
+            num_tests = len(all_combinations)
+            input_assignments = [
+                dict(zip(input_vars, combo)) for combo in all_combinations
+            ]
+        else:
+            input_assignments = [
+                {var: random.randint(0, 1) for var in input_vars}
+                for _ in range(num_tests)
+            ]
+        
+        # Step 3: Run tests
+        for i, input_assignment in enumerate(input_assignments):
+            # input_assignment = {var: random.randint(0, 1) for var in input_vars}
+    
+            # Run model and golden model
+            model_output = self.ActivateSelectorLines(input_assignment)
+            golden_output = self.GoldenModel(input_assignment, self.MainBDD_For_GoldenModel)
+    
+            # Compare
+            match = (model_output == golden_output)
+    
+            test_results.append({
+                'test_id': i + 1,
+                'input': input_assignment,
+                'model_output': model_output,
+                'golden_output': golden_output,
+                'match': match
+            })
+    
+            # Optional: Print mismatches
+            if not match:
+                print(f"[❌] Test {i+1} Failed")
+                print(f"Input:", {k: input_assignment[k] for k in sorted(input_assignment)})
+                print(f"Model Output:", {k: model_output[k] for k in sorted(model_output)})
+                print(f"Golden Output:", {k: golden_output[k] for k in sorted(golden_output)})
+            else:
+                print(f"[✅] Test {i+1} Passed", model_output)
+    
+        return test_results
+
+    def RunRandomTestCasesOnEachDesign(self, num_tests=10):
+
+        design_IDs = list(self.Bus.crossbar_designs.keys())
+        testNum = 0
+
+        for z, design_ID in enumerate(design_IDs):
+            print("Design:",z,design_ID)
+            crossbar_design = self.Bus.crossbar_designs[design_ID]["crossbar_design_instance"]
+            wordLineInput   = self.Bus.crossbar_designs[design_ID]["wordLineInput"]
+            OutputLine_Map  = self.Bus.crossbar_designs[design_ID]["OutputLine_Map"]
+
+            DesignBDDgraph = self.Design_Map[design_ID]['processed_graph']
+        
+            #Create inputs for each bdd design
+            # Step 1: Extract unique positive variable names from SelectorLineLabels
+            input_vars = set()
+            SelectorLineLabels = self.SelectorLineLabels.copy()
+            for label in SelectorLineLabels:
+                var = label.replace('~', '')
+                if 'O' not in var:
+                    input_vars.add(var)
+            input_vars = list(input_vars)
+        
+            # Step 3: Generate and test random input assignments
+            test_results = []
+            
+            for _ in range(num_tests):
+                # create cases for those inputs
+                input_assignment = {var: random.randint(0, 1) for var in input_vars}
+        
+                # Copy the main crossbar design to execution crossbar to run executions
+                self.Crossbar_Execution = [row.copy() for row in self.Crossbar]
+        
+                #Selecting selector lines based on the input_assignment (Boolean literals)
+                selector_lines = [0 for _ in self.SelectorLineLabels]
+                for i, SelectorLineLabel in enumerate(self.SelectorLineLabels):
+                    if('O' not in SelectorLineLabel):
+                        if('~'==SelectorLineLabel[0] and input_assignment[SelectorLineLabel[1:]]==0):
+                            selector_lines[i] = 1
+                        elif(SelectorLineLabel in input_assignment and input_assignment[SelectorLineLabel]==1):
+                            selector_lines[i] = 1
+                    else:
+                        selector_lines[i] = 1
+        
+                #Setting selectorlines in execution crossbar
+                for col_j, selector_line in enumerate(selector_lines):
+                    if(not selector_line):
+                        for row_i in range(len(self.Crossbar_Execution)):
+                            self.Crossbar_Execution[row_i][col_j] = 2
+        
+                #Create outputMap
+                self.Output = {}
+            
+                # Run model and golden model
+                model_output = self.Execute(wordLineInput, OutputLine_Map, testing_Individual_Design_Cases=True)  #Run each of those tests in its own designs
+        
+                # print('model_output', model_output)
+                
+                golden_output = self.GoldenModel(input_assignment, DesignBDDgraph) #Run them in the golden model
+
+                # print('golden_output', golden_output)
+        
+                # Compare
+                match = (model_output == golden_output)
+        
+                test_results.append({
+                    'design_ID': design_ID,
+                    'test_id': testNum + 1,
+                    'input': input_assignment,
+                    'model_output': model_output,
+                    'golden_output': golden_output,
+                    'match': match
+                })
+        
+                # Optional: Print mismatches
+                if not match:
+                    print(f"[❌] Test {testNum+1} Failed")
+                    print(f"design_ID: {design_ID}")
+                    print(f"Input:", {k: input_assignment[k] for k in sorted(input_assignment)})
+                    print(f"Model Output:", {k: model_output[k] for k in sorted(model_output)})
+                    print(f"Golden Output:", {k: golden_output[k] for k in sorted(golden_output)})
+                else:
+                    print(f"[✅] Test {testNum+1} Passed", model_output)
+                
+                testNum+=1
+            print()
+    
+        return test_results

@@ -5,7 +5,6 @@ import random
 import matplotlib.pyplot as plt
 from collections import deque, defaultdict
 # from pyeda.inter import expr, exprvar, expr2bdd
-from dd.autoref import BDD
 import networkx as nx
 from matplotlib.colors import ListedColormap
 import itertools
@@ -525,6 +524,13 @@ class PATH:
     
             # All ancestors (upstream)
             nodes_to_include.update(nx.ancestors(graph, node))
+
+        # temp = set(nodes_to_include)-set(top_graph_wordLines)
+        # print('nodes_to_include',{graph.nodes[n]['literal'] for n in temp if graph.nodes[n]['BipartitePart']=="U1"})
+        for node in nodes_to_include:
+            for parent in nx.ancestors(graph, node):
+                if(parent not in nodes_to_include):
+                    print("This must not be included",node)
     
         return graph.subgraph(nodes_to_include).copy()
 
@@ -582,7 +588,7 @@ class PATH:
     
         return components
 
-    def add_output_node(self, graph, split_node, split_id):
+    def add_output_node(self, graph, split_node):
         """
         Add a new output node to the graph connected from split_node. Returns modified graph and the new node ID.
         """
@@ -624,16 +630,25 @@ class PATH:
             n for n in graph.nodes
             if graph.nodes[n].get("distance") <= self.HeightThereshold and graph.nodes[n].get("BipartitePart") == "U1"
         ]
+        print('top_graph_wordLines',[graph.nodes[n]['literal'] for n in top_graph_wordLines])
         top_graph = self.get_full_top_graph(top_graph_wordLines, graph)
 
+        print('len(top_graph.nodes)',len(top_graph.nodes))
+
         # Step 2: Find the root U1 node
-        root_node = next(n for n in top_graph.nodes if top_graph.in_degree(n) == 0 and top_graph.nodes[n].get("BipartitePart") == "U1")
+        root_node = [n for n in top_graph.nodes if top_graph.in_degree(n) == 0 and top_graph.nodes[n].get("BipartitePart") == "U1"][0]
+
+        print('root_node',top_graph.nodes[root_node]['literal'])
 
         # Step 3: Find split_nodes(u1) in top_graph
         split_nodes = self.find_split_nodes(top_graph, graph)
 
+        print('split_nodes',[top_graph.nodes[n]['literal'] for n in split_nodes])
+
         # Step 3.5: Find output label nodes(u1) in top_graph
         output_label_nodes = self.find_output_label_nodes(top_graph, graph)
+
+        print('output_label_nodes',[(top_graph.nodes[n]['literal'],top_graph.nodes[n]['ExpressionRoot']) for n in output_label_nodes])
 
         #Step 4: Include the top nodes except the split u1 nodes in the included nodes set
         self.Included_nodes.update(set(top_graph.nodes)-set(split_nodes))
@@ -641,7 +656,6 @@ class PATH:
         # Step 5: Create split graphs starting from all split_nodes(u1) and not including nodes in Included_nodes and assign split_ids
         split_graphs = []
 
-        split_nodes.extend(output_label_nodes)
         #Create OutputLine_Map for this design to store split nodes and outputLabel nodes
         OutputLine_Map = {}
         for split_node in split_nodes:
@@ -651,22 +665,36 @@ class PATH:
             # Find the desendants of split node that are not previously included in the design
             split_graphs_from_node = self.not_included_successors(split_node, graph)
 
-            # add output node and then add the split_id
-            top_graph, added_output_node_id, literal, endingNodeLabel = self.add_output_node(top_graph, split_node, split_id)
+            # add output node
+            top_graph, added_output_node_id, literal, endingNodeLabel = self.add_output_node(top_graph, split_node)
 
-            #Updating output line map based on split node or final label
+            #Updating output line map based on the split node
+            OutputLine_Map[literal] = f'leaf {split_id}'
+
+            # Add split id label to the top graph's leaf split node
+            top_graph.nodes[added_output_node_id]['split_id'] = f'leaf {split_id}'
+
+            # Add split id label to the split graphs root split node
+            for split_graph in split_graphs_from_node:
+                split_graph.nodes[split_node]['split_id'] = f'root {split_id}'
+                split_graphs.append(split_graph)
+                print('len', len([n for n in split_graph.nodes]))
+
+        print('len(split_graphs)',len(split_graphs))
+
+        for output_label_node in output_label_nodes:
+
+            # add output node
+            top_graph, added_output_node_id, literal, endingNodeLabel = self.add_output_node(top_graph, output_label_node)
+
+            #Updating output line map based on the final label
             if(endingNodeLabel):
                 OutputLine_Map[literal] = endingNodeLabel
             else:
-                OutputLine_Map[literal] = f'leaf {split_id}'
+                raise Error
+        print('root node ids', [n for n in top_graph.nodes if top_graph.in_degree(n) == 0 and top_graph.nodes[n].get("BipartitePart") == "U1"])
 
-                # Add split id label to the top graph's leaf split node
-                top_graph.nodes[added_output_node_id]['split_id'] = f'leaf {split_id}'
-
-                # Add split id label to the split graphs root split node
-                for split_graph in split_graphs_from_node:
-                    split_graph.nodes[split_node]['split_id'] = f'root {split_id}'
-                    split_graphs.append(split_graph)
+        print('OutputLine_Map',OutputLine_Map)
 
         # Step 6: Get split_id of the top_graph
         top_graph_root_node = [n for n in top_graph.nodes if top_graph.in_degree(n) == 0 and top_graph.nodes[n].get("BipartitePart") == "U1"][0]
@@ -674,8 +702,6 @@ class PATH:
             design_id_key = top_graph.nodes[top_graph_root_node]['split_id']
         elif(top_graph.nodes[top_graph_root_node]['split_id'].split()[0]=="root"):
             design_id_key = top_graph.nodes[top_graph_root_node]['split_id'].split()[1]
-
-        print('OutputLine_Map',OutputLine_Map)
 
         print()
         
@@ -696,12 +722,12 @@ class PATH:
         while(unprocessed_graphs):
             unprocessed_graph = unprocessed_graphs.pop(0)
             measured_graph = self.getDistanceFromRoot(unprocessed_graph) #attribute to each node has ditance from root to each node
+
+            print('measured_graph as ds',{measured_graph.nodes[n]['literal']:measured_graph.nodes[n]['distance'] for n in measured_graph if measured_graph.nodes[n]['BipartitePart']=="U1"})
             
             #split_graphs has wordLineID in root node or start
             #processed_graph has wprdLineID in leaf or end
             split_graphs, processed_graph, design_id_key, OutputLine_Map = self.split_graphs_with_height(measured_graph)
-
-            # print('len(split_graphs)',len(split_graphs))
             
             # # Root node: in-degree == 0
             # root_node = [n for n, d in processed_graph.in_degree() if d == 0][0]
@@ -743,7 +769,7 @@ class PATH:
             word_lines_count = len(word_lines)
             word_lines.sort()
             word_lines_map = {word_line:i for i, word_line in enumerate(word_lines)}
-            print(word_lines_map)
+            # print(word_lines_map)
             for row_key in rowMap:
                 rowMap[row_key] = word_lines_map[rowMap[row_key]]
             

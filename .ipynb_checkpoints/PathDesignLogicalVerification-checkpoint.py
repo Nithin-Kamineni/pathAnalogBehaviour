@@ -5,7 +5,6 @@ import random
 import matplotlib.pyplot as plt
 from collections import deque, defaultdict
 # from pyeda.inter import expr, exprvar, expr2bdd
-from dd.autoref import BDD
 import networkx as nx
 from matplotlib.colors import ListedColormap
 import itertools

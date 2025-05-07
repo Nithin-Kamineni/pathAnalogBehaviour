@@ -587,63 +587,7 @@ class PATH:
         """
         Identify U1 nodes in top_graph that connect to nodes outside top_graph.
         """
-        full_graph = self.Graph
-        output_label_nodes = []
-    
-        # Step 1: Find root U1 nodes (in-degree 0 in top_graph)
-        roots = [
-            node for node in top_graph.nodes
-            if top_graph.in_degree(node) == 0 and top_graph.nodes[node].get("BipartitePart") == "U1"
-        ]
-    
-        queue = deque(roots)
-    
-        while queue:
-            next_layer = deque()
-    
-            while queue:
-                node = queue.popleft()
-
-                # Check if it's a terminal U1 node in the full graph
-                if not list(full_graph.successors(node)):
-                    output_label_nodes.append(node)
-                
-                # Add children in top_graph to next layer
-                for neighbor in top_graph.successors(node):
-                    next_layer.append(neighbor)
-                        
-            queue = next_layer
-    
-        return output_label_nodes
-
-    def not_included_successors(self, split_node, graph):
-        """
-        Return connected subgraphs from split_node's descendants that are not in Included_nodes.
-        """
-        # Step 1: Get descendants of split_node
-        all_successors = set(nx.descendants(graph, split_node))
-
-        # Step 2: Filter out included nodes
-        remaining_nodes = all_successors - self.Included_nodes
-
-        # Step 3: Create a subgraph only with remaining nodes
-        filtered_subgraph = graph.subgraph(remaining_nodes | {split_node}).copy()
-
-        # Step 4: Now do BFS from split_node **within** this subgraph
-        visited = set()
-        queue = deque([split_node])
-
-        while queue:
-            node = queue.popleft()
-            visited.add(node)
-            for neighbor in filtered_subgraph.successors(node):
-                if neighbor not in visited:
-                    queue.append(neighbor)
-
-        # Step 5: Final subgraph contains only path-connected descendants
-        final_subgraph = filtered_subgraph.subgraph(visited).copy()
-    
-        return final_subgraph
+        return [{"node_id":node, "literal":top_graph.nodes[node]['literal'], "ExpressionRoot":top_graph.nodes[node]['ExpressionRoot']} for node in top_graph.nodes if top_graph.nodes[node].get('ExpressionRoot', None) != None]
 
     def add_output_node(self, graph, split_node):
         """
@@ -717,8 +661,35 @@ class PATH:
     
         return graph, new_edge_node_id, literal, endingNodeLabel
 
+    def add_expression_output_node(self, graph, output_node):
+        """
+        Add a new output node to the graph connected from output_node. Returns modified graph and the new node ID.
+        """
+        # Track the next available EdgeNode index
+        edge_node_ids = [int(str(node).split("_")[-1]) for node in graph.nodes if str(node).startswith("EdgeNode_")]
+        edge_node_index = max(edge_node_ids) + 1 if edge_node_ids else 1
+
+        literal = "O"+str(self.output_node_index)
+
+        new_edge_node_id = f"EdgeNode_{edge_node_index}"  # Create a new EdgeNode
+
+        endingNodeLabel = graph.nodes[output_node].get('ExpressionRoot')
+        
+        # Add the new node with '1' as the literal and 'U2' as BipartitePart
+        graph.add_node(new_edge_node_id, ID=new_edge_node_id, literal=literal, BipartitePart="U2", ExpressionRoot=endingNodeLabel, split_id=None, in_split_id=set(), out_split_id=None)
+        
+        # Connect the original node to the new EdgeNode
+        graph.add_edge(output_node, new_edge_node_id)
+        
+        self.output_node_index += 1
+        
+        return graph, new_edge_node_id, literal, endingNodeLabel
+
     def split_graphs_with_height(self, graph):
 
+        # Step 0: Design to store split nodes and outputLabel nodes
+        OutputLine_Map = {}
+        
         # Step 1: Top graph of U1 nodes in threshold height
         top_graph_nodes = [
             n for n in graph.nodes
@@ -743,8 +714,16 @@ class PATH:
 
         # Step 4: Find output label nodes(u1) in top_graph
         output_label_nodes = self.find_output_label_nodes(top_graph)
-        # print('output_label_nodes',[(top_graph.nodes[n]['literal'],top_graph.nodes[n]['ExpressionRoot']) for n in output_label_nodes])
+        for output_label_node in output_label_nodes:
+            node_id = output_label_node["node_id"]
+            literal = output_label_node["literal"]
+            ExpressionRoot = output_label_node["ExpressionRoot"]
+            top_graph, added_output_node_id, literal, endingNodeLabel = self.add_expression_output_node(top_graph, node_id)
 
+            OutputLine_Map[literal] = endingNodeLabel
+        
+        
+        # print('output_label_nodes', output_label_nodes)
         # print('succ_split_nodes',succ_split_nodes)
         
         # Step 6.1: Intitalising pre-requisive node successor of U1 nodes
@@ -828,7 +807,6 @@ class PATH:
             
         # Step 9: Create split graphs from inverse_map_graph_chunk_1 and inverse_map_graph_chunk_2
         split_graphs = []
-        OutputLine_Map = {} # Design to store split nodes and outputLabel nodes
 
         # print('inverse_map_graph_chunk_1',inverse_map_graph_chunk_1)
         # print('inverse_map_graph_chunk_2',inverse_map_graph_chunk_2)

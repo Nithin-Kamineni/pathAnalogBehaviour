@@ -22,26 +22,75 @@ from collections import deque
 import uuid
 import copy
 
-
-
-
-
-
 class Bus:
     def __init__(self):
         self.crossbar_designs = {}
+        self.crossbar_wordLineInputs_memories = {}
 
-    def connect(self, crossbar_design_instance, design_ID, wordLineInput, OutputLine_Map):
-        self.crossbar_designs[design_ID] = {"crossbar_design_instance":crossbar_design_instance, "wordLineInput":wordLineInput, "OutputLine_Map":OutputLine_Map}
+        self.ProcessMap = {}
 
-    def send_signal(self, design_ID):
-        if design_ID in self.crossbar_designs:
-            crossbar_design = self.crossbar_designs[design_ID]["crossbar_design_instance"]
-            wordLineInput   = self.crossbar_designs[design_ID]["wordLineInput"]
-            OutputLine_Map  = self.crossbar_designs[design_ID]["OutputLine_Map"]
-            crossbar_design.Execute(wordLineInput, OutputLine_Map)
+    def connect(self, crossbar_design_instance, design_ID, DesignIdItemToWordLineInputMap, OutputLine_Map, PrerequisiteTrees):
+        self.crossbar_designs[design_ID] = {
+            "crossbar_design_instance":crossbar_design_instance, 
+            "DesignIdItemToWordLineInputMap":DesignIdItemToWordLineInputMap, 
+            "OutputLine_Map":OutputLine_Map,
+            "PrerequisiteTrees":PrerequisiteTrees,   #Pre-requsite designs to process the current design(Fixed)
+        }
+
+        #Keep track of what design_Id's have been processed
+        self.ProcessMap[design_ID] = False
+
+        # What input word lines need to be active 
+        self.crossbar_wordLineInputs_memories[design_ID] = {DesignIdItem:False for DesignIdItem in DesignIdItemToWordLineInputMap}
+
+    def send_signal(self, design_ID_item, signal=True):
+        #find all the design_IDs that are having the design_ID_item
+        design_ID_lst = [design_ID for design_ID in self.crossbar_designs if design_ID_item in design_ID]
+        
+        for design_ID in design_ID_lst:
+            #design_ID is frozenset
+            self.crossbar_wordLineInputs_memories[design_ID][design_ID_item] = (signal or self.crossbar_wordLineInputs_memories[design_ID][design_ID_item])
+                
+
+    def ResetExecution(self):
+        # Reseting inputs to all world lines
+        for design_ID in self.crossbar_wordLineInputs_memories:
+            for design_ID_item in design_ID:
+                self.crossbar_wordLineInputs_memories[design_ID][design_ID_item] = False
+
+        # Visited all trees is set to False
+        for design_ID in self.ProcessMap:
+            self.ProcessMap[design_ID] = False
+
+    def checkDesignIDsPrerequisites(self):
+        if(self.ProcessMap[frozenset({})]==False):
+            OutputLine_Map  = self.crossbar_designs[frozenset({})]["OutputLine_Map"]
+            crossbar_design = self.crossbar_designs[frozenset({})]["crossbar_design_instance"]
+            
+            crossbar_design.Execute([0], OutputLine_Map)
+            self.ProcessMap[frozenset({})] = True
+            self.checkDesignIDsPrerequisites()
         else:
-            print(f"tried to send to unknown design_ID: {design_ID}")
+            for design_ID in self.crossbar_designs:
+                crossbar_design   = self.crossbar_designs[design_ID]["crossbar_design_instance"]
+                OutputLine_Map    = self.crossbar_designs[design_ID]["OutputLine_Map"]
+                PrerequisiteTrees = self.crossbar_designs[design_ID]["PrerequisiteTrees"]
+                DesignIdItemToWordLineInputMap = self.crossbar_designs[design_ID]["DesignIdItemToWordLineInputMap"]
+                
+                AllPrerequisiteTreesProcessed = all(self.ProcessMap[design_ID_temp] for design_ID_temp in PrerequisiteTrees)
+                if(AllPrerequisiteTreesProcessed):
+                    wordLineInputs = []
+                    for design_ID_item in design_ID:
+                        if(self.crossbar_wordLineInputs_memories[design_ID][design_ID_item]):  #check if following word line needs to be activated
+                            wordLineInputs.append(DesignIdItemToWordLineInputMap[design_ID_item])  # Add wordline inputs of following design_ID
+                    # print('wordLineInputs',wordLineInputs)
+                    crossbar_design.Execute(wordLineInputs, OutputLine_Map)
+                    self.ProcessMap[design_ID] = True
+                else:
+                    print(f"AllPrerequisites are not satisfied: {AllPrerequisiteTreesProcessed}")
+                    # print([self.ProcessMap[design_ID_temp] for design_ID_temp in PrerequisiteTrees])
+                    self.checkDesignIDsPrerequisites()
+            
 
 #Program the crossbar on 1024x1024 designs (Dimentions Custom)
 #Have bus serice activated in each design
@@ -75,22 +124,27 @@ class PATH_Design_Logic_Verification:
         self.Crossbar_Execution = self.Crossbar
 
         for design_ID, processed_graph_map_value_map in self.Design_Map.items():
-            processed_graph    = processed_graph_map_value_map['processed_graph']
+            processed_graph          = processed_graph_map_value_map['processed_graph']
+            Crossbar_design          = processed_graph_map_value_map['Crossbar_design']
+            Selector_Lines_Map       = processed_graph_map_value_map['Selector_Lines_Map']
+            OutputLine_Map           = processed_graph_map_value_map['OutputLine_Map']
+            DesignIdItemToWordLineInputMap = processed_graph_map_value_map['DesignIdItemToWordLineInputMap']
+            LongestPath              = processed_graph_map_value_map['LongestPath']
+            PrerequisiteTrees        = processed_graph_map_value_map['PrerequisiteTrees']
+
             
-            Crossbar_design    = processed_graph_map_value_map['Crossbar_design']
-            Selector_Lines_Map = processed_graph_map_value_map['Selector_Lines_Map']
-            OutputLine_Map     = processed_graph_map_value_map['OutputLine_Map']
+            DesignIdToWordLineInputMap = self.ProgramCrossbar(Crossbar_design, Selector_Lines_Map, DesignIdItemToWordLineInputMap)
             
-            LongestPath        = processed_graph_map_value_map['LongestPath']
-            
-            wordLineInput = self.ProgramCrossbar(Crossbar_design, Selector_Lines_Map)
-            
-            self.Bus.connect(self, design_ID, wordLineInput, OutputLine_Map)
+            self.Bus.connect(self, design_ID, DesignIdToWordLineInputMap, OutputLine_Map, PrerequisiteTrees)
 
         self.SelectorLinesOutputLabelsToBitlineIndex = {SelectorLineLabel:index for index, SelectorLineLabel in enumerate(self.SelectorLineLabels) if 'O' in SelectorLineLabel}
 
-    def ProgramCrossbar(self, Crossbar_design, Selector_Lines_Map):
-        wordLineInput = self.RowOffSet
+    def ProgramCrossbar(self, Crossbar_design, Selector_Lines_Map, DesignId_To_WordLineNumber_Map):
+        StartPoint_wordLineInput = self.RowOffSet
+
+        DesignIdToWordLineInputMap = {}
+        for split_id in DesignId_To_WordLineNumber_Map:
+            DesignIdToWordLineInputMap[split_id] = DesignId_To_WordLineNumber_Map[split_id] + StartPoint_wordLineInput
 
         for row_i in range(len(Crossbar_design)):
             for col_j in range(len(Crossbar_design[row_i])):
@@ -101,7 +155,7 @@ class PATH_Design_Logic_Verification:
         self.ColOffSet = col_j + self.ColOffSet + 1
         
         self.SelectorLineLabels.extend(Selector_Lines_Map)
-        return wordLineInput
+        return DesignIdToWordLineInputMap
 
     def ActivateSelectorLines(self, InputAssignmentMap):
 
@@ -130,11 +184,14 @@ class PATH_Design_Logic_Verification:
 
         for graph in self.Design_Map:
             for outputLabel in self.Design_Map[graph]['OutputLine_Map']:
-                if self.Design_Map[graph]['OutputLine_Map'][outputLabel].split()[0]!='leaf':
+                if len(self.Design_Map[graph]['OutputLine_Map'][outputLabel]) < 10:
                     self.Output[self.Design_Map[graph]['OutputLine_Map'][outputLabel].split()[0]]=0
+
+        # Resetting crossbars for first execution
+        self.Bus.ResetExecution()
         
         #Sending signal to run the first crossbar after setting selector lines in programed crossbar
-        self.Bus.send_signal(None)
+        self.Bus.checkDesignIDsPrerequisites()
 
         return self.Output
 
@@ -145,7 +202,7 @@ class PATH_Design_Logic_Verification:
                 Crossbar[row_i][nonOutputBitline_index] = 2
         return Crossbar
 
-    def find_path_execution_in_crossbar(self, Crossbar, wordLineInput, outputBitline):
+    def find_path_execution_in_crossbar(self, Crossbar, wordLineInputs, outputBitlineIndex):
         # Custom function to emulate an ordered set using a list
         def add_to_ordered_set(ordered_set, element):
             if element not in ordered_set:
@@ -157,13 +214,14 @@ class PATH_Design_Logic_Verification:
         Stack = []
         
         # Finding paths
-        for j in range(len(Crossbar[wordLineInput])):
-            if Crossbar[wordLineInput][j] == R_LRS:
-                Stack.append([(wordLineInput, j), [(wordLineInput, j)], 'w'])  # Use a list for ordered visited nodes
+        for wordLineInput in wordLineInputs:
+            for j in range(len(Crossbar[wordLineInput])):
+                if Crossbar[wordLineInput][j] == R_LRS:
+                    Stack.append([(wordLineInput, j), [(wordLineInput, j)], 'w'])  # Use a list for ordered visited nodes
 
         # print('Crossbar[0]',Crossbar[0])
         # print('Stack',Stack)
-        # print('outputBitline',outputBitline)
+        # print('outputBitlineIndex',outputBitlineIndex)
         while Stack:
             [(path_i, path_j), visited, last_curr] = Stack.pop()  # Pop from the stack (LIFO)
             for i in range(len(Crossbar)):
@@ -178,58 +236,96 @@ class PATH_Design_Logic_Verification:
                         add_to_ordered_set(new_visited, (path_i, i))
                         Stack.append([(path_i, i), new_visited, 'w'])
             # print('path_j', path_i, path_j)
-            if(path_j==outputBitline):
-                # print('outputBitline',outputBitline)
+            if(path_j==outputBitlineIndex):
+                # print('outputBitlineIndex',outputBitlineIndex)
                 # print('visited',visited)
                 return True
         return False
         
-    def Execute(self, wordLineInput, OutputLine_Map, testing_Individual_Design_Cases=False):
+    def Execute(self, wordLineInputs, OutputLine_Map, testing_Individual_Design_Cases=False):
 
-        # print('wordLineInput', wordLineInput)
+        # print('wordLineInputs', wordLineInputs)
         # print('OutputLine_Map', OutputLine_Map)
 
         design_ID_List = []
         for outputLine in OutputLine_Map:
-            outputBitline = self.SelectorLinesOutputLabelsToBitlineIndex[outputLine]
+            outputBitlineIndex = self.SelectorLinesOutputLabelsToBitlineIndex[outputLine]
 
-            # print('outputBitline',outputBitline, OutputLine_Map[outputLine])
+            # print('outputBitlineIndex',outputBitlineIndex, OutputLine_Map[outputLine])
 
-            nonOutputBitlines = [self.SelectorLinesOutputLabelsToBitlineIndex[OutputLineLabel] for OutputLineLabel in OutputLine_Map if outputBitline!=self.SelectorLinesOutputLabelsToBitlineIndex[OutputLineLabel]]
+            # not sure
+            nonOutputBitline_indexes = [
+                self.SelectorLinesOutputLabelsToBitlineIndex[OutputLineLabel] 
+                for OutputLineLabel in OutputLine_Map 
+                if outputBitlineIndex!=self.SelectorLinesOutputLabelsToBitlineIndex[OutputLineLabel]
+            ]
 
-            # print('nonOutputBitlines', nonOutputBitlines)
-            MultiplexedCrossbar = self.TimeMultiplexCrossbar(self.Crossbar_Execution, nonOutputBitlines)
+            # print('nonOutputBitline_indexes',nonOutputBitline_indexes)
+
+            MultiplexedCrossbar = self.TimeMultiplexCrossbar(self.Crossbar_Execution, nonOutputBitline_indexes)
 
             # self.VisuvaliseCrossbar(MultiplexedCrossbar)
             
             # code to execute crossbar
-            foundPath = self.find_path_execution_in_crossbar(MultiplexedCrossbar, wordLineInput, outputBitline)
+            foundPath = self.find_path_execution_in_crossbar(MultiplexedCrossbar, wordLineInputs, outputBitlineIndex)
             # print('foundPath',foundPath)
+            # print('MultiplexedCrossbar', len(MultiplexedCrossbar), len(MultiplexedCrossbar[0]), wordLineInputs, outputBitlineIndex)
 
+            # isSplitNode = OutputLine_Map[outputLine].split()[0]=="leaf"
+            isSplitNode = len(OutputLine_Map[outputLine])>18
+            
             if(testing_Individual_Design_Cases):
-                if(OutputLine_Map[outputLine].split()[0]=="leaf"):
+                if(isSplitNode):
                     self.Output[outputLine]=1 if foundPath else 0
                 else:
                     self.Output[OutputLine_Map[outputLine]]=1 if foundPath else 0
                 continue
+
             
             if(foundPath):
-                if(OutputLine_Map[outputLine].split()[0]=="leaf"):
-                    design_ID_List.append(OutputLine_Map[outputLine].split()[1])
+                # print(isSplitNode, OutputLine_Map, outputLine)
+                if(isSplitNode):
+                    design_ID_List.append(OutputLine_Map[outputLine])
                 else:
                     self.Output[OutputLine_Map[outputLine]] = 1
             else:
-                if(OutputLine_Map[outputLine].split()[0]=="leaf"):
+                if(isSplitNode):
                     pass
 
         #Sending output to the testbench
         if(testing_Individual_Design_Cases):
             return self.Output
             
-        # send signals to bus
+        # Debug print
         # print('design_ID_List',design_ID_List)
+        # if(len(design_ID_List)>0):
+        #     print('============================')
+        #     design_ID_item = design_ID_List[0]
+        #     design_IDs = [design_ID for design_ID in self.Design_Map if design_ID_item in design_ID]
+        #     print('design_IDs',design_IDs)
+        #     for design_ID in design_IDs:
+        #         DesignBDDgraph = self.Design_Map[design_ID]['processed_graph']
+        #         DesignIdItemToWordLineInputMap = self.Design_Map[design_ID]['DesignIdItemToWordLineInputMap']
+        #         Crossbar_design          = self.Design_Map[design_ID]['Crossbar_design']
+        #         Selector_Lines_Map = self.Design_Map[design_ID]['Selector_Lines_Map']
+                
+        #         for node in DesignBDDgraph.nodes:
+        #             if(design_ID_item in DesignBDDgraph.nodes[node]['in_split_id']):
+        #                 print('DesignBDDgraph', DesignBDDgraph.nodes[node]['literal'])
+        #         print('DesignIdItemToWordLineInputMap', DesignIdItemToWordLineInputMap[design_ID_item])
+
+        #         for row in Crossbar_design:
+        #             print(row)
+        #         print(Selector_Lines_Map)
+                
+        #     print('============================')
+            
+            
+        # send signals to bus
         for design_ID in design_ID_List:
-            self.Bus.send_signal(design_ID)
+            self.Bus.send_signal(design_ID, signal = True)
+        # print(design_ID_List)
+        # self.Bus.checkDesignIDsPrerequisites()
 
     def GoldenModel(self, input_assignment, graph=None):
 
@@ -589,17 +685,24 @@ class PATH_Design_Logic_Verification:
                 {var: random.randint(0, 1) for var in input_vars}
                 for _ in range(num_tests)
             ]
+
+        passed_test_case_count = 0 #Keep track of number of test cases passed
         
         # Step 3: Run tests
         for i, input_assignment in enumerate(input_assignments):
             # input_assignment = {var: random.randint(0, 1) for var in input_vars}
+            # if(i+1 not in [8, 16, 556, 557, 558, 684, 686, 812, 814, 940, 942, 1068, 1070, 1196, 1198, 1324, 1326, 1452, 1454]):
+            #     continue
     
             # Run model and golden model
             model_output = self.ActivateSelectorLines(input_assignment)
             golden_output = self.GoldenModel(input_assignment, self.MainBDD_For_GoldenModel)
-    
+
+            #remove unwanted keys that are not part of golden outputs
+            model_processed_output = {k: v for k, v in model_output.items() if k in golden_output}
+            
             # Compare
-            match = (model_output == golden_output)
+            match = (model_processed_output == golden_output)
     
             test_results.append({
                 'test_id': i + 1,
@@ -610,13 +713,22 @@ class PATH_Design_Logic_Verification:
             })
     
             # Optional: Print mismatches
+            print('______________________________________')
             if not match:
                 print(f"[❌] Test {i+1} Failed")
                 print(f"Input:", {k: input_assignment[k] for k in sorted(input_assignment)})
                 print(f"Model Output:", {k: model_output[k] for k in sorted(model_output)})
                 print(f"Golden Output:", {k: golden_output[k] for k in sorted(golden_output)})
             else:
-                print(f"[✅] Test {i+1} Passed", model_output)
+                passed_test_case_count += 1
+                print(f"[✅] Test {i+1} Passed", model_processed_output)
+            print('______________________________________')
+
+            #debug statment break
+            # if(i==10):
+            #     break
+
+        print(f"Number of test cases passed out of is {passed_test_case_count}/{i+1}")
     
         return test_results
 

@@ -629,9 +629,17 @@ class PATH:
         """
         Add a new output node to the graph connected from split_node. Returns modified graph and the new node ID.
         """
+
+        #Add U1 (Word Line) output node
+        literal = max([int(graph.nodes[node]['literal']) for node in graph if graph.nodes[node]['BipartitePart'] == 'U1'])+1
+        id_str = f"{literal}_ID"
+        U1_node_attributes = {'ID': id_str, 'literal': str(literal), 'ExpressionRoot': None, 'BipartitePart':'U1', 'split_id':None, 'in_split_id':set(), 'out_split_id':None}
+        graph.add_node(id_str, **U1_node_attributes)
+        
+        #Add U2 (Bit Line) output node
+        
         # Track the next available EdgeNode index
         edge_node_ids = [int(str(node).split("_")[-1]) for node in graph.nodes if str(node).startswith("EdgeNode_")]
-        
         edge_node_index = max(edge_node_ids) + 1 if edge_node_ids else 1
 
         FinalLeafNode = False
@@ -652,8 +660,12 @@ class PATH:
             # Add the new node with '1' as the literal and 'U2' as BipartitePart
             graph.add_node(new_edge_node_id, ID=new_edge_node_id, literal=literal, BipartitePart="U2", split_id=None, in_split_id=set(), out_split_id=None)
             
-            # Connect the original node to the new EdgeNode
-            graph.add_edge(split_node, new_edge_node_id)
+            # Connect the original node to the u1_node
+            graph.add_edge(split_node, id_str)
+
+            # Connect the u1_node to the  new EdgeNode
+            graph.add_edge(id_str, new_edge_node_id)
+            
 
         endingNodeLabel = graph.nodes[split_node].get('ExpressionRoot') if FinalLeafNode else None
         
@@ -925,7 +937,6 @@ class PATH:
             measured_graph = self.getDistanceFromRoot(unprocessed_graph) #attribute to each node has ditance from root to each node
 
             print('measured_graph as ds',{measured_graph.nodes[n]['literal']:measured_graph.nodes[n]['distance'] for n in measured_graph if measured_graph.nodes[n]['BipartitePart']=="U1"})
-            
             #split_graphs has wordLineID in root node or start
             #processed_graph has wprdLineID in leaf or end
             processed_graph, split_graphs, OutputLine_Map = self.split_graphs_with_height(measured_graph)
@@ -968,13 +979,13 @@ class PATH:
                     colMap[processed_graph.nodes[node]['ID']] = bit_line_counter
                     bit_line_counter += 1
                 if(processed_graph.nodes[node]['BipartitePart']=='U1'):
-                    rowMap[processed_graph.nodes[node]['ID']] = processed_graph.nodes[node]['literal']
-                    word_lines.append(processed_graph.nodes[node]['literal'])
+                    rowMap[processed_graph.nodes[node]['ID']] = int(processed_graph.nodes[node]['literal'])
+                    word_lines.append(int(processed_graph.nodes[node]['literal']))
 
             word_lines_count = len(word_lines)
             word_lines.sort()
             word_lines_map = {word_line:i for i, word_line in enumerate(word_lines)}
-            # print(word_lines_map)
+            print(word_lines)
             for row_key in rowMap:
                 rowMap[row_key] = word_lines_map[rowMap[row_key]]
             
@@ -995,10 +1006,18 @@ class PATH:
             #Initialising crossbar design
             self.Processed_graphs_Map[Processed_graphs_Map_key]['Crossbar_design'] = [[0 for _ in range(bit_line_counter)] for _ in range(word_lines_count)]
 
+            self.Processed_graphs_Map[Processed_graphs_Map_key]['DesignIdItemToWordLineInputMap'] = {} #{design_id:wordlinenum}
+                
             # for i,(u, v, data) in enumerate(processed_graph.edges(data=True)):
             #     print(u, processed_graph.nodes[u])
             #     print(v, processed_graph.nodes[v])
             #     print('-------------------')
+
+            for in_split_id in Processed_graphs_Map_key:
+                processed_graph = self.Processed_graphs_Map[Processed_graphs_Map_key]['processed_graph']
+                input_node_id = [node for node in processed_graph.nodes if in_split_id in processed_graph.nodes[node]["in_split_id"]][0]
+                self.Processed_graphs_Map[Processed_graphs_Map_key]['DesignIdItemToWordLineInputMap'][in_split_id] = rowMap[input_node_id]
+                
             
             for i,(u, v, data) in enumerate(processed_graph.edges(data=True)):
                 if(processed_graph.nodes[u]['BipartitePart']=='U2'):
@@ -1028,6 +1047,22 @@ class PATH:
             self.Processed_graphs_Map[Processed_graphs_Map_key]['LongestPath']  = CrossbarLongPath
             
         self.GraphProcessPhase = "5. Crossbar Realization"
+
+    def InferPrerequisiteTrees(self):
+        # Processed_graphs_Map_key is a frozen set of design_Ids
+        for Processed_graphs_Map_key in self.Processed_graphs_Map:
+            self.Processed_graphs_Map[Processed_graphs_Map_key]['PrerequisiteTrees'] = set() #{design_id: Prerequisite DesignIds}
+
+            for Processed_graphs_Map_key_j in self.Processed_graphs_Map:
+                OutputLine_Map = self.Processed_graphs_Map[Processed_graphs_Map_key_j]['OutputLine_Map']
+                for outputLabel, outputSplit_Id in OutputLine_Map.items():
+                    if(outputSplit_Id in Processed_graphs_Map_key):
+                        print('aa')
+                        self.Processed_graphs_Map[Processed_graphs_Map_key]['PrerequisiteTrees'].add(Processed_graphs_Map_key_j)
+
+            print('88888888888', Processed_graphs_Map_key, self.Processed_graphs_Map[Processed_graphs_Map_key]['OutputLine_Map'])
+            print('99999999999', self.Processed_graphs_Map[Processed_graphs_Map_key]['PrerequisiteTrees'])
+            print('----------------------------------------------')
 
     def LongestpathInTreeAndCrossbar(self, graph):
         

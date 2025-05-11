@@ -29,6 +29,8 @@ class Bus:
 
         self.ProcessMap = {}
 
+        self.Topological_order = None
+
     def connect(self, crossbar_design_instance, design_ID, DesignIdItemToWordLineInputMap, OutputLine_Map, PrerequisiteTrees):
         self.crossbar_designs[design_ID] = {
             "crossbar_design_instance":crossbar_design_instance, 
@@ -43,6 +45,9 @@ class Bus:
         # What input word lines need to be active 
         self.crossbar_wordLineInputs_memories[design_ID] = {DesignIdItem:False for DesignIdItem in DesignIdItemToWordLineInputMap}
 
+    def setTopologicalOrder(self, Topological_order):
+        self.Topological_order = Topological_order
+    
     def send_signal(self, design_ID_item, signal=True):
         #find all the design_IDs that are having the design_ID_item
         design_ID_lst = [design_ID for design_ID in self.crossbar_designs if design_ID_item in design_ID]
@@ -62,6 +67,24 @@ class Bus:
         for design_ID in self.ProcessMap:
             self.ProcessMap[design_ID] = False
 
+    def ExecuteDesignsInTopologicalOrder(self):
+        for design_ID in self.Topological_order:
+            crossbar_design   = self.crossbar_designs[design_ID]["crossbar_design_instance"]
+            OutputLine_Map    = self.crossbar_designs[design_ID]["OutputLine_Map"]
+            PrerequisiteTrees = self.crossbar_designs[design_ID]["PrerequisiteTrees"]
+            DesignIdItemToWordLineInputMap = self.crossbar_designs[design_ID]["DesignIdItemToWordLineInputMap"]
+
+            wordLineInputs = []
+            if(design_ID==frozenset({})):
+                wordLineInputs.append(0)
+            else:
+                for design_ID_item in design_ID:
+                    if(self.crossbar_wordLineInputs_memories[design_ID][design_ID_item]):  #check if following word line needs to be activated
+                        wordLineInputs.append(DesignIdItemToWordLineInputMap[design_ID_item])  # Add wordline inputs of following design_ID
+                # print('wordLineInputs',wordLineInputs)
+            crossbar_design.Execute(wordLineInputs, OutputLine_Map)
+
+        
     def checkDesignIDsPrerequisites(self):
         if(self.ProcessMap[frozenset({})]==False):
             OutputLine_Map  = self.crossbar_designs[frozenset({})]["OutputLine_Map"]
@@ -78,6 +101,7 @@ class Bus:
                 DesignIdItemToWordLineInputMap = self.crossbar_designs[design_ID]["DesignIdItemToWordLineInputMap"]
                 
                 AllPrerequisiteTreesProcessed = all(self.ProcessMap[design_ID_temp] for design_ID_temp in PrerequisiteTrees)
+                print('self.ProcessMap[design_ID]', self.ProcessMap[design_ID])
                 if(AllPrerequisiteTreesProcessed):
                     wordLineInputs = []
                     for design_ID_item in design_ID:
@@ -123,6 +147,12 @@ class PATH_Design_Logic_Verification:
 
         self.Crossbar_Execution = self.Crossbar
 
+        AllPrerequisiteTrees = {}
+        for design_ID, processed_graph_map_value_map in self.Design_Map.items():
+            AllPrerequisiteTrees[design_ID] = processed_graph_map_value_map['PrerequisiteTrees']
+
+        self.Topological_order = self.Flatten_prerequisite_graph(AllPrerequisiteTrees)
+
         for design_ID, processed_graph_map_value_map in self.Design_Map.items():
             processed_graph          = processed_graph_map_value_map['processed_graph']
             Crossbar_design          = processed_graph_map_value_map['Crossbar_design']
@@ -137,7 +167,23 @@ class PATH_Design_Logic_Verification:
             
             self.Bus.connect(self, design_ID, DesignIdToWordLineInputMap, OutputLine_Map, PrerequisiteTrees)
 
+        self.Bus.setTopologicalOrder(self.Topological_order)
+
         self.SelectorLinesOutputLabelsToBitlineIndex = {SelectorLineLabel:index for index, SelectorLineLabel in enumerate(self.SelectorLineLabels) if 'O' in SelectorLineLabel}
+
+    def Flatten_prerequisite_graph(self, AllPrerequisiteTrees):
+        G = nx.DiGraph()
+    
+        for design_id, prereq_sets in AllPrerequisiteTrees.items():
+            G.add_node(design_id)  # Ensure the node exists
+    
+            for prereq_set in prereq_sets:
+                G.add_edge(prereq_set, design_id)  # prereq_set must come before design_id
+    
+        if not nx.is_directed_acyclic_graph(G):
+            raise ValueError("Cycle detected in dependency graph!")
+
+        return list(nx.topological_sort(G))
 
     def ProgramCrossbar(self, Crossbar_design, Selector_Lines_Map, DesignId_To_WordLineNumber_Map):
         StartPoint_wordLineInput = self.RowOffSet
@@ -191,7 +237,8 @@ class PATH_Design_Logic_Verification:
         self.Bus.ResetExecution()
         
         #Sending signal to run the first crossbar after setting selector lines in programed crossbar
-        self.Bus.checkDesignIDsPrerequisites()
+        # self.Bus.checkDesignIDsPrerequisites()
+        self.Bus.ExecuteDesignsInTopologicalOrder()
 
         return self.Output
 
@@ -267,22 +314,15 @@ class PATH_Design_Logic_Verification:
             # self.VisuvaliseCrossbar(MultiplexedCrossbar)
             
             # code to execute crossbar
-            foundPath = self.find_path_execution_in_crossbar(MultiplexedCrossbar, wordLineInputs, outputBitlineIndex)
-            # print('foundPath',foundPath)
+            PathCurrent = self.find_path_execution_in_crossbar(MultiplexedCrossbar, wordLineInputs, outputBitlineIndex)
+            # print('PathCurrent',PathCurrent)
             # print('MultiplexedCrossbar', len(MultiplexedCrossbar), len(MultiplexedCrossbar[0]), wordLineInputs, outputBitlineIndex)
 
             # isSplitNode = OutputLine_Map[outputLine].split()[0]=="leaf"
             isSplitNode = len(OutputLine_Map[outputLine])>18
-            
-            if(testing_Individual_Design_Cases):
-                if(isSplitNode):
-                    self.Output[outputLine]=1 if foundPath else 0
-                else:
-                    self.Output[OutputLine_Map[outputLine]]=1 if foundPath else 0
-                continue
 
             
-            if(foundPath):
+            if(PathCurrent):
                 # print(isSplitNode, OutputLine_Map, outputLine)
                 if(isSplitNode):
                     design_ID_List.append(OutputLine_Map[outputLine])

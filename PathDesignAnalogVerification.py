@@ -29,8 +29,6 @@ class Bus:
 
         self.ProcessMap = {}
 
-        self.Topological_order = None
-
     def connect(self, crossbar_design_instance, design_ID, DesignIdItemToWordLineInputMap, OutputLine_Map, PrerequisiteTrees):
         self.crossbar_designs[design_ID] = {
             "crossbar_design_instance":crossbar_design_instance, 
@@ -39,15 +37,12 @@ class Bus:
             "PrerequisiteTrees":PrerequisiteTrees,   #Pre-requsite designs to process the current design(Fixed)
         }
 
-        #Keep track of what design_Id's have been processed
+        # To keep track of what design_Id's have been processed
         self.ProcessMap[design_ID] = False
 
         # What input word lines need to be active 
         self.crossbar_wordLineInputs_memories[design_ID] = {DesignIdItem:False for DesignIdItem in DesignIdItemToWordLineInputMap}
 
-    def setTopologicalOrder(self, Topological_order):
-        self.Topological_order = Topological_order
-    
     def send_signal(self, design_ID_item, signal=True):
         #find all the design_IDs that are having the design_ID_item
         design_ID_lst = [design_ID for design_ID in self.crossbar_designs if design_ID_item in design_ID]
@@ -67,24 +62,6 @@ class Bus:
         for design_ID in self.ProcessMap:
             self.ProcessMap[design_ID] = False
 
-    def ExecuteDesignsInTopologicalOrder(self):
-        for design_ID in self.Topological_order:
-            crossbar_design   = self.crossbar_designs[design_ID]["crossbar_design_instance"]
-            OutputLine_Map    = self.crossbar_designs[design_ID]["OutputLine_Map"]
-            PrerequisiteTrees = self.crossbar_designs[design_ID]["PrerequisiteTrees"]
-            DesignIdItemToWordLineInputMap = self.crossbar_designs[design_ID]["DesignIdItemToWordLineInputMap"]
-
-            wordLineInputs = []
-            if(design_ID==frozenset({})):
-                wordLineInputs.append(0)
-            else:
-                for design_ID_item in design_ID:
-                    if(self.crossbar_wordLineInputs_memories[design_ID][design_ID_item]):  #check if following word line needs to be activated
-                        wordLineInputs.append(DesignIdItemToWordLineInputMap[design_ID_item])  # Add wordline inputs of following design_ID
-                # print('wordLineInputs',wordLineInputs)
-            crossbar_design.Execute(wordLineInputs, OutputLine_Map)
-
-        
     def checkDesignIDsPrerequisites(self):
         if(self.ProcessMap[frozenset({})]==False):
             OutputLine_Map  = self.crossbar_designs[frozenset({})]["OutputLine_Map"]
@@ -101,7 +78,7 @@ class Bus:
                 DesignIdItemToWordLineInputMap = self.crossbar_designs[design_ID]["DesignIdItemToWordLineInputMap"]
                 
                 AllPrerequisiteTreesProcessed = all(self.ProcessMap[design_ID_temp] for design_ID_temp in PrerequisiteTrees)
-                print('self.ProcessMap[design_ID]', self.ProcessMap[design_ID])
+                print('self.ProcessMap[design_ID]',self.ProcessMap[design_ID])
                 if(AllPrerequisiteTreesProcessed):
                     wordLineInputs = []
                     for design_ID_item in design_ID:
@@ -131,10 +108,22 @@ class Bus:
 
 #Have a topological plot of the graph (Optional)
 
-class PATH_Design_Logic_Verification:
+class PATH_Design_Analog_Verification:
     def __init__(self, Bus, Design_Map, MainBDD_For_GoldenModel, CrossbarGridSize = 1024):
         self.Design_Map = Design_Map
         self.Bus = Bus
+
+        # resistor parameters
+        self.R_Off      = 4e9  # Very large (transistor off)
+        self.R_LRS      = 2000  # Low-resistance state
+        self.R_Line_Out = 200  # 200 ohms from each column node to GND
+        self.R_Not      = 1e10  # Large resistance for non-output columns
+        self.R_source   = 100  # Series resistor from 0.2 V source to row 0
+
+        self.R_HRS_Map  = {frozenset({}):2e6}  # DesignId: resistance... High-resistance state of the memory cell
+
+        # Voltage source for the first row (0.2V)
+        self.Vsrc = 0.2
 
         self.RowOffSet = 0
         self.ColOffSet = 0
@@ -143,15 +132,9 @@ class PATH_Design_Logic_Verification:
 
         self.SelectorLineLabels = []
 
-        self.Crossbar = [[0 for _ in range(CrossbarGridSize)] for _ in range(CrossbarGridSize)]
+        self.Crossbar = np.zeros((CrossbarGridSize, CrossbarGridSize))
 
         self.Crossbar_Execution = self.Crossbar
-
-        AllPrerequisiteTrees = {}
-        for design_ID, processed_graph_map_value_map in self.Design_Map.items():
-            AllPrerequisiteTrees[design_ID] = processed_graph_map_value_map['PrerequisiteTrees']
-
-        self.Topological_order = self.Flatten_prerequisite_graph(AllPrerequisiteTrees)
 
         for design_ID, processed_graph_map_value_map in self.Design_Map.items():
             processed_graph          = processed_graph_map_value_map['processed_graph']
@@ -162,45 +145,38 @@ class PATH_Design_Logic_Verification:
             LongestPath              = processed_graph_map_value_map['LongestPath']
             PrerequisiteTrees        = processed_graph_map_value_map['PrerequisiteTrees']
 
-            
             DesignIdToWordLineInputMap = self.ProgramCrossbar(Crossbar_design, Selector_Lines_Map, DesignIdItemToWordLineInputMap)
             
             self.Bus.connect(self, design_ID, DesignIdToWordLineInputMap, OutputLine_Map, PrerequisiteTrees)
 
-        self.Bus.setTopologicalOrder(self.Topological_order)
-
+        # Used for time multiplexing of output columns
         self.SelectorLinesOutputLabelsToBitlineIndex = {SelectorLineLabel:index for index, SelectorLineLabel in enumerate(self.SelectorLineLabels) if 'O' in SelectorLineLabel}
 
-    def Flatten_prerequisite_graph(self, AllPrerequisiteTrees):
-        G = nx.DiGraph()
-    
-        for design_id, prereq_sets in AllPrerequisiteTrees.items():
-            G.add_node(design_id)  # Ensure the node exists
-    
-            for prereq_set in prereq_sets:
-                G.add_edge(prereq_set, design_id)  # prereq_set must come before design_id
-    
-        if not nx.is_directed_acyclic_graph(G):
-            raise ValueError("Cycle detected in dependency graph!")
-
-        return list(nx.topological_sort(G))
-
     def ProgramCrossbar(self, Crossbar_design, Selector_Lines_Map, DesignId_To_WordLineNumber_Map):
-        StartPoint_wordLineInput = self.RowOffSet
-
-        DesignIdToWordLineInputMap = {}
-        for split_id in DesignId_To_WordLineNumber_Map:
-            DesignIdToWordLineInputMap[split_id] = DesignId_To_WordLineNumber_Map[split_id] + StartPoint_wordLineInput
-
-        for row_i in range(len(Crossbar_design)):
-            for col_j in range(len(Crossbar_design[row_i])):
-                if(Crossbar_design[row_i][col_j]==1):
-                    self.Crossbar[row_i + self.RowOffSet][col_j + self.ColOffSet] = 1
+        Crossbar_design = np.array(Crossbar_design)  # Ensure it's a NumPy array
         
-        self.RowOffSet = row_i + self.RowOffSet + 1
-        self.ColOffSet = col_j + self.ColOffSet + 1
+        num_rows, num_cols = Crossbar_design.shape
+        
+        row_start = self.RowOffSet
+        row_end = self.RowOffSet + num_rows
+        col_start = self.ColOffSet
+        col_end = self.ColOffSet + num_cols
+
+        # Efficient slice assignment
+        self.Crossbar[row_start:row_end, col_start:col_end] = Crossbar_design
+        
+        # Offset input row mapping
+        DesignIdToWordLineInputMap = {
+            split_id: row + row_start
+            for split_id, row in DesignId_To_WordLineNumber_Map.items()
+        }
+
+        # Update Row/Col offsets
+        self.RowOffSet = row_end
+        self.ColOffSet = col_end
         
         self.SelectorLineLabels.extend(Selector_Lines_Map)
+        
         return DesignIdToWordLineInputMap
 
     def ActivateSelectorLines(self, InputAssignmentMap):
@@ -237,8 +213,7 @@ class PATH_Design_Logic_Verification:
         self.Bus.ResetExecution()
         
         #Sending signal to run the first crossbar after setting selector lines in programed crossbar
-        # self.Bus.checkDesignIDsPrerequisites()
-        self.Bus.ExecuteDesignsInTopologicalOrder()
+        self.Bus.checkDesignIDsPrerequisites()
 
         return self.Output
 

@@ -27,7 +27,7 @@ class Bus:
         self.crossbar_designs = {}
         self.crossbar_wordLineInputs_memories = {}
 
-        self.ProcessMap = {}
+        self.Topological_order = None
 
     def connect(self, crossbar_design_instance, design_ID, DesignIdItemToWordLineInputMap, OutputLine_Map, PrerequisiteTrees):
         self.crossbar_designs[design_ID] = {
@@ -37,12 +37,12 @@ class Bus:
             "PrerequisiteTrees":PrerequisiteTrees,   #Pre-requsite designs to process the current design(Fixed)
         }
 
-        # To keep track of what design_Id's have been processed
-        self.ProcessMap[design_ID] = False
-
         # What input word lines need to be active 
         self.crossbar_wordLineInputs_memories[design_ID] = {DesignIdItem:False for DesignIdItem in DesignIdItemToWordLineInputMap}
 
+    def setTopologicalOrder(self, Topological_order):
+        self.Topological_order = Topological_order
+    
     def send_signal(self, design_ID_item, signal=True):
         #find all the design_IDs that are having the design_ID_item
         design_ID_lst = [design_ID for design_ID in self.crossbar_designs if design_ID_item in design_ID]
@@ -58,39 +58,22 @@ class Bus:
             for design_ID_item in design_ID:
                 self.crossbar_wordLineInputs_memories[design_ID][design_ID_item] = False
 
-        # Visited all trees is set to False
-        for design_ID in self.ProcessMap:
-            self.ProcessMap[design_ID] = False
+    def ExecuteDesignsInTopologicalOrder(self):
+        for design_ID in self.Topological_order:
+            crossbar_design   = self.crossbar_designs[design_ID]["crossbar_design_instance"]
+            OutputLine_Map    = self.crossbar_designs[design_ID]["OutputLine_Map"]
+            PrerequisiteTrees = self.crossbar_designs[design_ID]["PrerequisiteTrees"]
+            DesignIdItemToWordLineInputMap = self.crossbar_designs[design_ID]["DesignIdItemToWordLineInputMap"]
 
-    def checkDesignIDsPrerequisites(self):
-        if(self.ProcessMap[frozenset({})]==False):
-            OutputLine_Map  = self.crossbar_designs[frozenset({})]["OutputLine_Map"]
-            crossbar_design = self.crossbar_designs[frozenset({})]["crossbar_design_instance"]
-            
-            crossbar_design.Execute([0], OutputLine_Map)
-            self.ProcessMap[frozenset({})] = True
-            self.checkDesignIDsPrerequisites()
-        else:
-            for design_ID in self.crossbar_designs:
-                crossbar_design   = self.crossbar_designs[design_ID]["crossbar_design_instance"]
-                OutputLine_Map    = self.crossbar_designs[design_ID]["OutputLine_Map"]
-                PrerequisiteTrees = self.crossbar_designs[design_ID]["PrerequisiteTrees"]
-                DesignIdItemToWordLineInputMap = self.crossbar_designs[design_ID]["DesignIdItemToWordLineInputMap"]
-                
-                AllPrerequisiteTreesProcessed = all(self.ProcessMap[design_ID_temp] for design_ID_temp in PrerequisiteTrees)
-                print('self.ProcessMap[design_ID]',self.ProcessMap[design_ID])
-                if(AllPrerequisiteTreesProcessed):
-                    wordLineInputs = []
-                    for design_ID_item in design_ID:
-                        if(self.crossbar_wordLineInputs_memories[design_ID][design_ID_item]):  #check if following word line needs to be activated
-                            wordLineInputs.append(DesignIdItemToWordLineInputMap[design_ID_item])  # Add wordline inputs of following design_ID
-                    # print('wordLineInputs',wordLineInputs)
-                    crossbar_design.Execute(wordLineInputs, OutputLine_Map)
-                    self.ProcessMap[design_ID] = True
-                else:
-                    print(f"AllPrerequisites are not satisfied: {AllPrerequisiteTreesProcessed}")
-                    # print([self.ProcessMap[design_ID_temp] for design_ID_temp in PrerequisiteTrees])
-                    self.checkDesignIDsPrerequisites()
+            wordLineInputs = []
+            if(design_ID==frozenset({})):
+                wordLineInputs.append(0)
+            else:
+                for design_ID_item in design_ID:
+                    if(self.crossbar_wordLineInputs_memories[design_ID][design_ID_item]):  #check if following word line needs to be activated
+                        wordLineInputs.append(DesignIdItemToWordLineInputMap[design_ID_item])  # Add wordline inputs of following design_ID
+                # print('wordLineInputs',wordLineInputs)
+            crossbar_design.Execute(design_ID, wordLineInputs, OutputLine_Map)
             
 
 #Program the crossbar on 1024x1024 designs (Dimentions Custom)
@@ -120,21 +103,32 @@ class PATH_Design_Analog_Verification:
         self.R_Not      = 1e10  # Large resistance for non-output columns
         self.R_source   = 100  # Series resistor from 0.2 V source to row 0
 
-        self.R_HRS_Map  = {frozenset({}):2e6}  # DesignId: resistance... High-resistance state of the memory cell
-
+        self.R_HRS_Map  = {design_ID:2e6 for design_ID in self.Design_Map}  # DesignId: resistance... High-resistance state of the memory cell
+        self.R_HRS      = self.R_HRS_Map[frozenset({})]
+        
         # Voltage source for the first row (0.2V)
         self.Vsrc = 0.2
 
         self.RowOffSet = 0
         self.ColOffSet = 0
 
+        self.OnesCurrentFromDesignMap = {design_ID:[] for design_ID in self.Design_Map}
+        self.ZerosCurrentFromDesignMap = {design_ID:[] for design_ID in self.Design_Map}
+
         self.MainBDD_For_GoldenModel = MainBDD_For_GoldenModel
 
         self.SelectorLineLabels = []
 
-        self.Crossbar = np.zeros((CrossbarGridSize, CrossbarGridSize))
+        self.Crossbar = np.zeros((CrossbarGridSize, CrossbarGridSize), dtype=np.float32)
 
-        self.Crossbar_Execution = self.Crossbar
+        self.Crossbar_Execution = None
+
+        AllPrerequisiteTrees = {}
+        for design_ID, processed_graph_map_value_map in self.Design_Map.items():
+            AllPrerequisiteTrees[design_ID] = processed_graph_map_value_map['PrerequisiteTrees']
+
+        self.Topological_order = self.Flatten_prerequisite_graph(AllPrerequisiteTrees)
+        self.Bus.setTopologicalOrder(self.Topological_order)
 
         for design_ID, processed_graph_map_value_map in self.Design_Map.items():
             processed_graph          = processed_graph_map_value_map['processed_graph']
@@ -145,18 +139,39 @@ class PATH_Design_Analog_Verification:
             LongestPath              = processed_graph_map_value_map['LongestPath']
             PrerequisiteTrees        = processed_graph_map_value_map['PrerequisiteTrees']
 
-            DesignIdToWordLineInputMap = self.ProgramCrossbar(Crossbar_design, Selector_Lines_Map, DesignIdItemToWordLineInputMap)
+            self.R_HRS_Map[design_ID] = 2e6
+
+            DesignIdToWordLineInputMap = self.ProgramCrossbar(design_ID, Crossbar_design, Selector_Lines_Map, DesignIdItemToWordLineInputMap)
             
             self.Bus.connect(self, design_ID, DesignIdToWordLineInputMap, OutputLine_Map, PrerequisiteTrees)
 
-        # Used for time multiplexing of output columns
         self.SelectorLinesOutputLabelsToBitlineIndex = {SelectorLineLabel:index for index, SelectorLineLabel in enumerate(self.SelectorLineLabels) if 'O' in SelectorLineLabel}
 
-    def ProgramCrossbar(self, Crossbar_design, Selector_Lines_Map, DesignId_To_WordLineNumber_Map):
-        Crossbar_design = np.array(Crossbar_design)  # Ensure it's a NumPy array
+    def Flatten_prerequisite_graph(self, AllPrerequisiteTrees):
+        G = nx.DiGraph()
+    
+        for design_id, prereq_sets in AllPrerequisiteTrees.items():
+            G.add_node(design_id)  # Ensure the node exists
+    
+            for prereq_set in prereq_sets:
+                G.add_edge(prereq_set, design_id)  # prereq_set must come before design_id
+    
+        if not nx.is_directed_acyclic_graph(G):
+            raise ValueError("Cycle detected in dependency graph!")
+
+        return list(nx.topological_sort(G))
+
+    def ProgramCrossbar(self, design_ID, Crossbar_design, Selector_Lines_Map, DesignId_To_WordLineNumber_Map):
+        
+        Crossbar_design = np.asarray(Crossbar_design, dtype=np.float32)  # Ensure it's a NumPy array
+
+        # 2) Replace 1 → R_LRS, 0 → R_HRS in a vectorised way
+        # Crossbar_design = np.where(Crossbar_design == 1,
+        #                        self.R_LRS,          # low-resistance state
+        #                        self.R_HRS_Map[design_ID])          # high-resistance state
         
         num_rows, num_cols = Crossbar_design.shape
-        
+
         row_start = self.RowOffSet
         row_end = self.RowOffSet + num_rows
         col_start = self.ColOffSet
@@ -164,13 +179,13 @@ class PATH_Design_Analog_Verification:
 
         # Efficient slice assignment
         self.Crossbar[row_start:row_end, col_start:col_end] = Crossbar_design
-        
+
         # Offset input row mapping
         DesignIdToWordLineInputMap = {
             split_id: row + row_start
             for split_id, row in DesignId_To_WordLineNumber_Map.items()
         }
-
+        
         # Update Row/Col offsets
         self.RowOffSet = row_end
         self.ColOffSet = col_end
@@ -182,7 +197,7 @@ class PATH_Design_Analog_Verification:
     def ActivateSelectorLines(self, InputAssignmentMap):
 
         # Copy the main crossbar design to execution crossbar to run executions
-        self.Crossbar_Execution = [row.copy() for row in self.Crossbar]
+        self.Crossbar_Execution = self.Crossbar.copy()
 
         #Selecting selector lines based on the InputAssignmentMap (Boolean literals)
         selector_lines = [0 for _ in self.SelectorLineLabels]
@@ -196,32 +211,44 @@ class PATH_Design_Analog_Verification:
                 selector_lines[i] = 1
 
         #Setting selectorlines in execution crossbar
-        for col_j, selector_line in enumerate(selector_lines):
-            if(not selector_line):
-                for row_i in range(len(self.Crossbar_Execution)):
-                    self.Crossbar_Execution[row_i][col_j] = 2
+        # for col_j, selector_line in enumerate(selector_lines):
+        #     if(not selector_line):
+        #         for row_i in range(len(self.Crossbar_Execution)):
+        #             self.Crossbar_Execution[row_i][col_j] = 2
+
+        n_cols = self.Crossbar_Execution.shape[1]  # 1024
+        mask   = np.zeros(n_cols, dtype=bool)      # all False
+        
+        # fill the first 162 positions with your selector condition
+        mask[:len(selector_lines)] = (np.array(selector_lines) == 0)
+
+        # broadcast one assignment
+        self.Crossbar_Execution[:, mask] = 2
 
         #Create a Output dictionary for storing the output result
         self.Output = {}
 
-        for graph in self.Design_Map:
-            for outputLabel in self.Design_Map[graph]['OutputLine_Map']:
-                if len(self.Design_Map[graph]['OutputLine_Map'][outputLabel]) < 10:
-                    self.Output[self.Design_Map[graph]['OutputLine_Map'][outputLabel].split()[0]]=0
+        for design_ID in self.Design_Map:
+            for outputLabel in self.Design_Map[design_ID]['OutputLine_Map']:
+                if len(self.Design_Map[design_ID]['OutputLine_Map'][outputLabel]) < 10:
+                    self.Output[self.Design_Map[design_ID]['OutputLine_Map'][outputLabel].split()[0]]=0
 
         # Resetting crossbars for first execution
         self.Bus.ResetExecution()
         
         #Sending signal to run the first crossbar after setting selector lines in programed crossbar
-        self.Bus.checkDesignIDsPrerequisites()
+        self.Bus.ExecuteDesignsInTopologicalOrder()
 
         return self.Output
 
-    def TimeMultiplexCrossbar(self, Crossbar_, nonOutputBitlines):
-        Crossbar = [row.copy() for row in Crossbar_]
-        for nonOutputBitline_index in nonOutputBitlines:
-            for row_i in range(len(Crossbar)):
-                Crossbar[row_i][nonOutputBitline_index] = 2
+    def TimeMultiplexCrossbar(self, Crossbar_, nonOutputBitline_indexes):
+        # Crossbar = [row.copy() for row in Crossbar_]
+        # for nonOutputBitline_index in nonOutputBitlines:
+        #     for row_i in range(len(Crossbar)):
+        #         Crossbar[row_i][nonOutputBitline_index] = 2
+        Crossbar = Crossbar_.copy()
+        Crossbar[:, nonOutputBitline_indexes] = 2
+        
         return Crossbar
 
     def find_path_execution_in_crossbar(self, Crossbar, wordLineInputs, outputBitlineIndex):
@@ -242,7 +269,6 @@ class PATH_Design_Analog_Verification:
                     Stack.append([(wordLineInput, j), [(wordLineInput, j)], 'w'])  # Use a list for ordered visited nodes
 
         # print('Crossbar[0]',Crossbar[0])
-        # print('Stack',Stack)
         # print('outputBitlineIndex',outputBitlineIndex)
         while Stack:
             [(path_i, path_j), visited, last_curr] = Stack.pop()  # Pop from the stack (LIFO)
@@ -263,11 +289,178 @@ class PATH_Design_Analog_Verification:
                 # print('visited',visited)
                 return True
         return False
+
+    def find_path_current_execution_in_crossbar(self, design_ID, Crossbar, wordLineInputs, outputBitlineIndex):
+        # Custom function to emulate an ordered set using a list
+        def add_to_ordered_set(ordered_set, element):
+            if element not in ordered_set:
+                ordered_set.append(element)
+
+        R_Off = self.R_Off  # Very large (transistor off)
+        R_HRS = self.R_HRS_Map[design_ID]  # High-resistance state of the memory cell
+        R_LRS = self.R_LRS  # Low-resistance state
+
+        R_HRS = 2e6
+        R_LRS = 2000
         
-    def Execute(self, wordLineInputs, OutputLine_Map, testing_Individual_Design_Cases=False):
+        R_Line_Out = 200  # 200 ohms from each column node to GND
+        R_Not = 1e10  # Large resistance for non-output columns
+        R_source   = 100  # Series resistor from 0.2 V source to row 0
+        
+        # Voltage source for the first row (0.2V)
+        Vsrc = 0.2  
+
+        # for row in Crossbar:
+        #     print(row)
+
+
+
+        Resistance_matrix = np.where(Crossbar == 0, R_HRS, 
+                                    np.where(Crossbar == 1, R_LRS, 
+                                             np.where(Crossbar == 2, R_Off, Crossbar)))
+        
+        # Resistance_matrix = np.where(Crossbar_design == 1,
+        #                        self.R_LRS,          # low-resistance state
+        #                        self.R_HRS_Map[design_ID])          # high-resistance state
+
+        # -----------------------------
+        # 2) Prepare the crossbar data
+        # -----------------------------
+        crossbar_size = Resistance_matrix.shape[0]
+
+        # -----------------------------
+        # 3) Construct the KCL system
+        #    We have #rows + #columns unknowns:
+        #       Vr0, Vr1, ..., Vr(N-1), Vc0, Vc1, ..., Vc(N-1)
+        # -----------------------------
+        num_vars = 2 * crossbar_size  
+        A = np.zeros((num_vars, num_vars))  # Coefficient matrix
+        b = np.zeros(num_vars)  # Constant vector
+
+        # -----------------------------
+        # 3a) Row equations (KCL at each row node)
+        # -----------------------------
+        for i in range(crossbar_size):
+            if i in wordLineInputs:
+                #
+                # For row 0, we have an incoming/outgoing current through R_source to the 0.2V supply.
+                # The KCL for row 0 is:
+                #   Σ_j (Vr0 - Vc_j)/R(i,j) + (Vr0 - 0.2)/R_source = 0
+                #
+                for j in range(crossbar_size):
+                    Rij = Resistance_matrix[i, j]
+                    A[i, i]                += 1.0 / Rij    # +1/Rij for Vr[i]
+                    A[i, crossbar_size + j] -= 1.0 / Rij    # -1/Rij for Vc[j]
+
+                # Now add the series resistor with the source (0.2 V):
+                A[i, i] += 1.0 / R_source  # Coefficient for Vr0
+                
+                # Move the known source voltage part to the RHS
+                b[i] = (Vsrc / R_source)
+    
+            else:
+                # For row i (i > 0), normal crossbar KCL with no direct voltage source:
+                #   Σ_j (Vri - Vcj)/R(i,j) = 0
+                for j in range(crossbar_size):
+                    Rij = Resistance_matrix[i, j]
+                    A[i, i]                += 1.0 / Rij    # Coefficient for Vr_i
+                    A[i, crossbar_size + j] -= 1.0 / Rij   # Coefficient for Vc_j
+                # b[i] remains 0
+    
+        # -----------------------------
+        # 3b) Column equations (KCL at each column node)
+        #       If the column is in output_bitlines => goes to GND through R_Line_Out
+        #       Otherwise => goes to GND through R_Not
+        # -----------------------------
+        # print('output_bitlines',output_bitlines)
+        for j in range(crossbar_size):
+            if j == outputBitlineIndex:
+                R_ground = R_Line_Out  # If it's an output bitline, connects to ground through R_Line_Out
+            else:
+                R_ground = R_Not  # If not an output bitline, connect to ground through R_Not
+
+            # The KCL for column j is:
+            #    Vc_j / R_ground + Σ_i (Vc_j - Vr_i)/R(i,j) = 0
+            #
+            # Expand:
+            #    (Vc_j / R_ground) + Σ_i (Vc_j / R(i,j) - Vr_i / R(i,j)) = 0
+            # => (1/R_ground + Σ_i (1/R(i,j))) * Vc_j  - Σ_i(1/R(i,j)) * Vr_i = 0
+            
+            A[crossbar_size + j, crossbar_size + j] = 1 / R_ground  # Self term
+            for i in range(crossbar_size):
+                Rij = Resistance_matrix[i][j]
+                A[crossbar_size + j, crossbar_size + j] += 1 / Rij  # Self term
+                A[crossbar_size + j, i] -= 1 / Rij  # Interaction with row
+
+        # -----------------------------
+        # 4) Solve the system A x = b
+        #    where x = [Vr_0, ..., Vr_(N-1), Vc_0, ..., Vc_(N-1)]
+        # -----------------------------
+        solution = np.linalg.solve(A, b)
+    
+        # Extract row voltages Vr and column voltages Vc
+        Vr = solution[:crossbar_size]*1000  # Row voltages
+        Vc = solution[crossbar_size:]*1000  # Column voltages
+    
+        # Compute currents through each resistor
+        currentInDevices = (Vr[:, None] - Vc[None, :]) / Resistance_matrix
+    
+        # -----------------------------
+        # 5) Compute output currents
+        #    The current from each output column j is simply
+        #    I_out(j) = Vc_j / R_Line_Out (if j is an output bitline)
+        # -----------------------------
+        CurrentOutput = Vc[outputBitlineIndex] / R_Line_Out
+        print('CurrentOutput', CurrentOutput, outputBitlineIndex)
+        
+        return CurrentOutput
+        
+        # # Stack for depth-first traversal
+        # Stack = []
+        
+        # # Finding paths
+        # for wordLineInput in wordLineInputs:
+        #     for j in range(len(Crossbar[wordLineInput])):
+        #         if Crossbar[wordLineInput][j] == R_LRS:
+        #             Stack.append([(wordLineInput, j), [(wordLineInput, j)], 'w'])  # Use a list for ordered visited nodes
+
+        # # print('Crossbar[0]',Crossbar[0])
+        # # print('Stack',Stack)
+        # # print('outputBitlineIndex',outputBitlineIndex)
+        # while Stack:
+        #     [(path_i, path_j), visited, last_curr] = Stack.pop()  # Pop from the stack (LIFO)
+        #     for i in range(len(Crossbar)):
+        #         if last_curr == 'w':
+        #             if Crossbar[i][path_j] == R_LRS and (i, path_j) not in visited:
+        #                 new_visited = visited.copy()
+        #                 add_to_ordered_set(new_visited, (i, path_j))
+        #                 Stack.append([(i, path_j), new_visited, 'b'])
+        #         elif last_curr == 'b':
+        #             if Crossbar[path_i][i] == R_LRS and (path_i, i) not in visited:
+        #                 new_visited = visited.copy()
+        #                 add_to_ordered_set(new_visited, (path_i, i))
+        #                 Stack.append([(path_i, i), new_visited, 'w'])
+        #     # print('path_j', path_i, path_j)
+        #     if(path_j==outputBitlineIndex):
+        #         # print('outputBitlineIndex',outputBitlineIndex)
+        #         # print('visited',visited)
+        #         return True
+        # return False
+        
+    def Execute(self, design_ID, wordLineInputs, OutputLine_Map, testing_Individual_Design_Cases=False):
 
         # print('wordLineInputs', wordLineInputs)
         # print('OutputLine_Map', OutputLine_Map)
+
+        design_ID_graph = self.Design_Map[design_ID]['processed_graph']
+        LiteralsInputs = [wordLineInput for wordLineInput in self.Design_Map[design_ID]['DesignIdItemToWordLineInputMap'].values()]
+        
+        Golden_Unprocessed_OutputMap = self.GoldenModel(self.input_assignment, design_ID_graph, LiteralsInputs, OutputLine_Map)
+        
+        # Get all outputs from design_ID_graph
+        Unprocessed_OutputMap = {}
+        for outputLabel in OutputLine_Map:
+            Unprocessed_OutputMap[OutputLine_Map[outputLabel]]=0
 
         design_ID_List = []
         for outputLine in OutputLine_Map:
@@ -286,26 +479,39 @@ class PATH_Design_Analog_Verification:
 
             MultiplexedCrossbar = self.TimeMultiplexCrossbar(self.Crossbar_Execution, nonOutputBitline_indexes)
 
-            # self.VisuvaliseCrossbar(MultiplexedCrossbar)
-            
-            # code to execute crossbar
-            PathCurrent = self.find_path_execution_in_crossbar(MultiplexedCrossbar, wordLineInputs, outputBitlineIndex)
-            # print('PathCurrent',PathCurrent)
-            # print('MultiplexedCrossbar', len(MultiplexedCrossbar), len(MultiplexedCrossbar[0]), wordLineInputs, outputBitlineIndex)
+            # code to logically execute crossbar
+            FoundPath = self.find_path_execution_in_crossbar(MultiplexedCrossbar, wordLineInputs, outputBitlineIndex)
+            print()
+            print('FoundPath',FoundPath, outputLine, OutputLine_Map[outputLine])
 
+            # code to logically execute crossbar
+            PathCurrent = self.find_path_current_execution_in_crossbar(design_ID, MultiplexedCrossbar, wordLineInputs, outputBitlineIndex)
+            # print('PathCurrent',PathCurrent)
+
+            if(FoundPath):
+                self.OnesCurrentFromDesignMap[design_ID].append(PathCurrent)
+            else:
+                self.ZerosCurrentFromDesignMap[design_ID].append(PathCurrent)
+            
             # isSplitNode = OutputLine_Map[outputLine].split()[0]=="leaf"
             isSplitNode = len(OutputLine_Map[outputLine])>18
 
-            
-            if(PathCurrent):
+            if(FoundPath):
                 # print(isSplitNode, OutputLine_Map, outputLine)
                 if(isSplitNode):
                     design_ID_List.append(OutputLine_Map[outputLine])
                 else:
                     self.Output[OutputLine_Map[outputLine]] = 1
+                Unprocessed_OutputMap[OutputLine_Map[outputLine]] = 1
             else:
                 if(isSplitNode):
                     pass
+
+        print(1)
+        print('Unprocessed_OutputMap', Unprocessed_OutputMap)
+        print()
+        print('Golden_Unprocessed_OutputMap', Golden_Unprocessed_OutputMap)
+        print()
 
         #Sending output to the testbench
         if(testing_Individual_Design_Cases):
@@ -339,15 +545,24 @@ class PATH_Design_Analog_Verification:
         # send signals to bus
         for design_ID in design_ID_List:
             self.Bus.send_signal(design_ID, signal = True)
+            
         # print(design_ID_List)
-        # self.Bus.checkDesignIDsPrerequisites()
 
-    def GoldenModel(self, input_assignment, graph=None):
-
+    def GoldenModel(self, input_assignment, graph=None, LiteralsInputs=None, OutputLine_Map=None):
+        
         singleDesignCheck = True
+        
         if(graph is None):
-            singleDesignCheck = False
+            # singleDesignCheck = False
             graph = self.MainBDD_For_GoldenModel
+            
+            # Start from all nodes with in-degree 0
+            start_nodes = [n for n in graph.nodes if graph.in_degree(n) == 0]
+            visited_outputs = {graph.nodes[n].get('ExpressionRoot'):0 for n in graph.nodes if graph.nodes[n].get('ExpressionRoot') is not None}
+        else:
+            # Start from nodes in LiteralsInputs
+            start_nodes = [n for n in graph.nodes if graph.nodes[n]['literal'] in LiteralsInputs]
+            visited_outputs = {OutputLine_Map[OutputLine_label]:0 for OutputLine_label in OutputLine_Map}
     
         # Helper: decide if a U2 node can be passed
         def is_passable_u2(node):
@@ -358,9 +573,8 @@ class PATH_Design_Analog_Verification:
             else:
                 return input_assignment.get(literal) == 1
     
-        # Start from all nodes with in-degree 0
-        start_nodes = [n for n in graph.nodes if graph.in_degree(n) == 0]
-        visited_outputs = {graph.nodes[n].get('ExpressionRoot'):0 for n in graph.nodes if graph.nodes[n].get('ExpressionRoot') is not None}
+        
+        
         if(singleDesignCheck):
             split_outputs_map = {}
             for n in graph.nodes:
@@ -381,7 +595,9 @@ class PATH_Design_Analog_Verification:
                 bipartite_type = node_data.get('BipartitePart')
                 literal = node_data.get('literal', '')
                 expression_root = node_data.get('ExpressionRoot')
-    
+                if(expression_root is None):
+                    expression_root = node_data.get('out_split_id')
+                
                 if expression_root is not None:
                     visited_outputs[expression_root] = 1
                     continue
@@ -404,277 +620,6 @@ class PATH_Design_Analog_Verification:
     
         # print("Computed Outputs:", visited_outputs)
         return visited_outputs
-
-        
-    def VisuvaliseCrossbar(self, initialisedCrossbar):
-
-        colors = ["red", "blue", "black"]
-        if(max(initialisedCrossbar[0])!=2):
-            colors = colors[:-1]
-        custom_cmap = ListedColormap(colors)
-        initialisedCrossbar = np.array(initialisedCrossbar)
-        # Create the heatmap
-        fig, ax = plt.subplots(figsize=(10, 8))
-        heatmap = ax.imshow(initialisedCrossbar, cmap=custom_cmap, aspect="auto")
-
-        # Annotate the heatmap with 'LRS', 'HRS', or 'Off'
-        for i in range(initialisedCrossbar.shape[0]):
-            for j in range(initialisedCrossbar.shape[1]):
-                if initialisedCrossbar[i, j] == 1:
-                    text = "LRS"        # Same label for value=1
-                    font_color = "white"
-                elif initialisedCrossbar[i, j] == 2:
-                    text = "Off"        # New label for value=2
-                    font_color = "white"
-                elif initialisedCrossbar[i, j] == 2:
-                    text = "On"        # New label for value=2
-                    font_color = "green"
-                else:  # Assume any other value (including 0) is HRS
-                    text = "HRS"
-                    font_color = "black"
-        
-                ax.text(
-                    j, i,
-                    text,
-                    ha="center",
-                    va="center",
-                    color=font_color,
-                    fontsize=10,
-                    weight="bold"
-                )
-
-        # Add gridlines for cell borders
-        ax.set_xticks(np.arange(initialisedCrossbar.shape[1] + 1) - 0.5, minor=True)
-        ax.set_yticks(np.arange(initialisedCrossbar.shape[0] + 1) - 0.5, minor=True)
-        ax.grid(which="minor", color="black", linestyle="-", linewidth=0.5)
-        ax.tick_params(which="minor", size=0)
-
-        # Set labels and title
-        ax.set_xlabel("Columns", fontsize=12, weight="bold")
-        ax.set_ylabel("Rows", fontsize=12, weight="bold")
-        ax.set_title("Crossbar Resistive States", fontsize=14, weight="bold")
-
-        #shif this to functional functions
-        # xlabelsOfLiterals ['a1', 'a0', '~a1', '~a1', 'C5', 'C6', 'C7', 'C8', 'C9', 'C10', 'C11', 'C12', 'C13', 'C14', 'C15', 'C16']
-
-        xlabelsOfLiterals = self.SelectorLineLabels
-        # Pad with 'buffer' if needed
-        num_columns = initialisedCrossbar.shape[1]
-        if len(xlabelsOfLiterals) < num_columns:
-            xlabelsOfLiterals += ['NA'] * (num_columns - len(xlabelsOfLiterals))
-        
-        # Remove default ticks
-        ax.set_xticks(np.arange(initialisedCrossbar.shape[1]))
-        ax.set_yticks(np.arange(initialisedCrossbar.shape[0]))
-        ax.set_xticklabels(xlabelsOfLiterals, fontsize=10)
-        ax.set_yticklabels([f"{j+1}" for j in range(initialisedCrossbar.shape[1])], fontsize=10)
-
-        # Show the heatmap
-        plt.colorbar(heatmap, label="Resistive State", orientation="vertical")
-        plt.tight_layout()
-        plt.show()
-
-    def IdealCurrentPath(self, literal_value_map):
-        
-        # literal_value_map = {'a':0, 'b':0, 'cin':1}
-        # print('literal_value_map',literal_value_map)
-        
-        #bitline labels according to crossbar
-        # self.Bitlines = ['a', '~a', '~a', 'a', 'b', '~b', '~b', 'b', 'b', '~cin', 'cin', 'O14', 'O15']
-        # self.OutputLine_Map = {'O14': 'cout', 'O15': 'sum0'}
-        # self.End_Bitline_Output_Line = 'O16'
-
-        # print('literal_value_map', literal_value_map)
-        bitlines = self.Bitlines
-
-        R_LRS = 1
-        R_HRS = 0
-        R_Off = 2
-
-        IdealOutputs = {}
-        IdealPathsOfCurrents = []
-
-        OutputPaths = {}
-
-        End_Bitline_Output_Cell = None
-        #finding output paths
-        for col,bitline in enumerate(bitlines):
-            if(self.End_Bitline_Output_Line == bitline):
-                for row in range(len(self.CrossbarResistiveStates)-1,-1,-1):
-                    if(self.CrossbarResistiveStates[row][col]==R_LRS):
-                        End_Bitline_Output_Cell = (row, col)
-            elif('O' in bitline):
-                OutputPaths[self.OutputLine_Map[bitline]] = []
-
-        # print('End_Bitline_Output_Cell',End_Bitline_Output_Cell)
-        # print('OutputLine_Map',self.OutputLine_Map)
-        
-        for clockCycle, outputLineLabel in enumerate(self.OutputLine_Map):
-            Resistance_matrix = [row.copy() for row in self.CrossbarResistiveStates]
-            SelectorLines = [0 for _ in range(len(Resistance_matrix[0]))]
-            for i,bitline in enumerate(bitlines):
-                literal = bitline
-                negation = literal.startswith('~')
-                if(negation):
-                    literal = literal[1:]
-    
-                if(outputLineLabel == literal):
-                    SelectorLines[i] = 1
-                elif(self.End_Bitline_Output_Line == literal):
-                    SelectorLines[i] = 1
-                elif(literal in literal_value_map and literal_value_map[literal]==0):
-                    if(negation):
-                        SelectorLines[i] = 1
-                    else:
-                        SelectorLines[i] = 0
-                elif(literal in literal_value_map and literal_value_map[literal]==1):
-                    if(negation):
-                        SelectorLines[i] = 0
-                    else:
-                        SelectorLines[i] = 1
-    
-            # print('outputLineLabel',outputLineLabel)
-            # print('SelectorLines',SelectorLines)
-            
-            #Swiching off the bitlines
-            for col, SelectorLine in enumerate(SelectorLines):
-                if(SelectorLine==0):
-                    for row in range(len(Resistance_matrix)):
-                        Resistance_matrix[row][col] = R_Off
-    
-            # Custom function to emulate an ordered set using a list
-            def add_to_ordered_set(ordered_set, element):
-                if element not in ordered_set:
-                    ordered_set.append(element)
-
-            literal_value_map_lst = [{'a0': 1, 'b0': 1, 'cin': 0},{'a0': 0, 'b0': 1, 'cin': 0},{'a0': 0, 'b0': 1, 'cin': 1}]
-                    
-            # Stack for depth-first traversal
-            Stack = []
-    
-            # Finding paths
-            for j in range(len(Resistance_matrix[0])):
-                if Resistance_matrix[0][j] == R_LRS:
-                    Stack.append([(0, j), [(0, j)], 'w'])  # Use a list for ordered visited nodes
-
-            # print('Resistance_matrix[0]',Resistance_matrix[0])
-            # print('Stack',Stack)
-            while Stack:
-                [(path_i, path_j), visited, last_curr] = Stack.pop()  # Pop from the stack (LIFO)
-                for i in range(len(Resistance_matrix)):
-                    if last_curr == 'w':
-                        if Resistance_matrix[i][path_j] == R_LRS and (i, path_j) not in visited:
-                            new_visited = visited.copy()
-                            add_to_ordered_set(new_visited, (i, path_j))
-                            Stack.append([(i, path_j), new_visited, 'b'])
-                    elif last_curr == 'b':
-                        if Resistance_matrix[path_i][i] == R_LRS and (path_i, i) not in visited:
-                            new_visited = visited.copy()
-                            add_to_ordered_set(new_visited, (path_i, i))
-                            Stack.append([(path_i, i), new_visited, 'w'])
-                if((path_i, path_j) == End_Bitline_Output_Cell):
-                    OutputPaths[self.OutputLine_Map[outputLineLabel]] = visited
-
-            # print('OutputPaths2',OutputPaths)
-
-            #display paths
-            label = self.OutputLine_Map[outputLineLabel]
-            temp_path = OutputPaths[label]
-            if(len(temp_path)>0):
-                IdealPathsOfCurrents.append({"literal_value_map":literal_value_map, "label":label, "OutputPath": temp_path, "lengthOfDevices":len(temp_path)})
-                IdealOutputs[label]=1
-                # print(f"{label}=1")
-            else:
-                IdealOutputs[label]=0
-                # print(f"{label}=0")
-                if(literal_value_map in literal_value_map_lst):
-                    print('literal_value_map',literal_value_map)
-                    print(f"{label}=0")
-                    # self.VisuvaliseCrossbar(initialisedCrossbar=Resistance_matrix)
-        
-        return IdealOutputs, IdealPathsOfCurrents
-        
-    def Verify_All_Ideal_Paths_In_Crossbar(self, checkWithOriginal=False, checkWithBDD=False):
-        """
-        Iterates through all rows of the truth table, inputs values into 
-        the IdealCurrentPath function, and compares outputs.
-        """
-        dfs = []
-        if(checkWithOriginal):
-            # Ensure the truth table is generated
-            if not hasattr(self, "TruthTable") or self.OriginalTruthTable is None:
-                print("Error: TruthTable not generated. Call GetTruthTables() first.")
-                return
-            dfs.append(self.OriginalTruthTable)
-        if(checkWithBDD):
-            # Ensure the truth table is generated
-            if not hasattr(self, "TruthTable") or self.BDDTruthTable is None:
-                print("Error: TruthTable not generated. Call GetTruthTables() first.")
-                return
-            dfs.append(self.BDDTruthTable)
-    
-        print("Verifying all ideal paths in the crossbar...")
-
-        for df in dfs:
-
-            mismatches = 0  # Track number of mismatches
-    
-            input_columns = [col for col in df.columns if col not in self.outputs]  # Variables
-            output_columns = [col for col in df.columns if col in self.outputs]  # Expressions (functions)
-
-            # print('df.columns',df.columns)
-            # print('input_columns',input_columns)
-            # print('output_columns',output_columns)
-    
-            self.AllIdealPathOfCurrent = {}
-            
-            # Iterate over each row in the truth table
-            for idx, row in df.iterrows():
-                # if(idx%1000!=0):
-                #     continue
-                # print(idx)
-                input_assignment = {var: int(row[var]) for var in input_columns}  # Convert inputs to dictionary
-                expected_outputs = {expr: int(row[expr]) for expr in output_columns}  # Expected output values
-    
-                # Compute output using IdealCurrentPath function
-                computed_outputs, IdealPathsOfCurrents = self.IdealCurrentPath(input_assignment)
-
-                # Compare computed outputs with expected outputs
-                for expr in output_columns:
-                    if computed_outputs.get(expr) != expected_outputs[expr]:
-                        print(f"Mismatch at row {idx}: Inputs {input_assignment}, "
-                              f"Expected {expected_outputs}, Got {computed_outputs}")
-                        
-                        mismatches += 1
-                        
-                totlengthTemp = []
-    
-                # print('input_assignment', idx, input_assignment)   #debugprint
-                
-                maxLengthOfDevices = 0
-                for IdealPathsOfCurrent in IdealPathsOfCurrents:
-                    literal_value_map = IdealPathsOfCurrent["literal_value_map"]
-                    label = IdealPathsOfCurrent["label"]
-                    OutputPath = IdealPathsOfCurrent["OutputPath"]
-                    lengthOfDevices = IdealPathsOfCurrent["lengthOfDevices"]
-    
-                    if(frozenset(literal_value_map.items()) not in self.AllIdealPathOfCurrent):
-                        self.AllIdealPathOfCurrent[frozenset(literal_value_map.items())] = {}
-                    self.AllIdealPathOfCurrent[frozenset(literal_value_map.items())][label]  = {"OutputPath":OutputPath, "lengthOfDevices":lengthOfDevices}
-                    # self.AllIdealPathOfCurrent[frozenset(literal_value_map.items())][label]  = {"lengthOfDevices":lengthOfDevices}
-    
-                    totlengthTemp.append(lengthOfDevices)
-                    # print(label, OutputPath)
-    
-                # print('sum totlengthTemp',sum(totlengthTemp))
-                # if(len(totlengthTemp)):
-                #     print('avg totlengthTemp',sum(totlengthTemp)/len(totlengthTemp))
-                # print('expected_outputs',idx, expected_outputs)
-                # print('computed_outputs', computed_outputs)
-                
-            print(f"Crossbar verification completed. Total mismatches: {mismatches}")
-            
-            return mismatches
 
     def RunRandomTestCases(self, num_tests=10, RunAllTests=False):
         # Step 1: Extract unique positive variable names from SelectorLineLabels
@@ -706,12 +651,16 @@ class PATH_Design_Analog_Verification:
         # Step 3: Run tests
         for i, input_assignment in enumerate(input_assignments):
             # input_assignment = {var: random.randint(0, 1) for var in input_vars}
-            # if(i+1 not in [8, 16, 556, 557, 558, 684, 686, 812, 814, 940, 942, 1068, 1070, 1196, 1198, 1324, 1326, 1452, 1454]):
-            #     continue
-    
+            boundary_indices = [0, len(input_assignments) - 1, 5, 39]
+            if i not in boundary_indices:
+                continue
+
+            self.input_assignment = input_assignment
+            
             # Run model and golden model
+            print('input_assignment', input_assignment)
             model_output = self.ActivateSelectorLines(input_assignment)
-            golden_output = self.GoldenModel(input_assignment, self.MainBDD_For_GoldenModel)
+            golden_output = self.GoldenModel(input_assignment)
 
             #remove unwanted keys that are not part of golden outputs
             model_processed_output = {k: v for k, v in model_output.items() if k in golden_output}
@@ -740,8 +689,8 @@ class PATH_Design_Analog_Verification:
             print('______________________________________')
 
             #debug statment break
-            # if(i==10):
-            #     break
+            if(i>=20):
+                break
 
         print(f"Number of test cases passed out of is {passed_test_case_count}/{i+1}")
     
@@ -778,7 +727,7 @@ class PATH_Design_Analog_Verification:
                 input_assignment = {var: random.randint(0, 1) for var in input_vars}
         
                 # Copy the main crossbar design to execution crossbar to run executions
-                self.Crossbar_Execution = [row.copy() for row in self.Crossbar]
+                self.Crossbar_Execution = self.Crossbar.copy()
         
                 #Selecting selector lines based on the input_assignment (Boolean literals)
                 selector_lines = [0 for _ in self.SelectorLineLabels]
@@ -801,9 +750,11 @@ class PATH_Design_Analog_Verification:
                 self.Output = {}
             
                 # Run model and golden model
-                model_output = self.Execute(wordLineInput, OutputLine_Map, testing_Individual_Design_Cases=True)  #Run each of those tests in its own designs
+                model_output = self.Execute(design_ID, wordLineInput, OutputLine_Map, testing_Individual_Design_Cases=True)  #Run each of those tests in its own designs
         
                 # print('model_output', model_output)
+
+                self.input_assignment = input_assignment
                 
                 golden_output = self.GoldenModel(input_assignment, DesignBDDgraph) #Run them in the golden model
 

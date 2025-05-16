@@ -29,7 +29,8 @@ class ParentCountError(Exception):
 class PATH:
     def __init__(self, CrossbarGridSize = 16):
 
-        self.HeightThereshold = 10
+        self.HeightThereshold = 8
+        self.SizeThereshold = 64
 
         self.pre_bool_expressions = None
         self.pre_varibles_lst = None
@@ -923,8 +924,11 @@ class PATH:
         return top_graph, split_graphs, OutputLine_Map
 
     
-    def GraphSplitting(self):
+    def GraphSplittingWithHeightConstraint(self, height=None):
 
+        if(height is not None):
+            self.HeightThereshold = height
+            
         #Assign split_id to all the nodes
         for node in self.Graph.nodes:
             self.Graph.nodes[node]['split_id'] = None
@@ -965,6 +969,13 @@ class PATH:
         #traverse through the graph and split the graph where the height constraing fails
 
         self.GraphProcessPhase = "4. Graph Splitting"
+
+    def GraphSplittinWithSizeConstraint(self, size=None):
+
+        if(size is not None):
+           self.SizeThereshold = size
+
+        
 
     def CrossbarDesignRelalization(self):
 

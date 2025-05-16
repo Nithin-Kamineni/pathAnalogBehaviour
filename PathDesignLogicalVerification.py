@@ -143,9 +143,9 @@ class PATH_Design_Logic_Verification:
 
         self.SelectorLineLabels = []
 
-        self.Crossbar = [[0 for _ in range(CrossbarGridSize)] for _ in range(CrossbarGridSize)]
+        self.Crossbar = np.zeros((CrossbarGridSize, CrossbarGridSize), dtype=np.uint8)
 
-        self.Crossbar_Execution = self.Crossbar
+        self.Crossbar_Execution = None
 
         AllPrerequisiteTrees = {}
         for design_ID, processed_graph_map_value_map in self.Design_Map.items():
@@ -186,27 +186,37 @@ class PATH_Design_Logic_Verification:
         return list(nx.topological_sort(G))
 
     def ProgramCrossbar(self, Crossbar_design, Selector_Lines_Map, DesignId_To_WordLineNumber_Map):
-        StartPoint_wordLineInput = self.RowOffSet
-
-        DesignIdToWordLineInputMap = {}
-        for split_id in DesignId_To_WordLineNumber_Map:
-            DesignIdToWordLineInputMap[split_id] = DesignId_To_WordLineNumber_Map[split_id] + StartPoint_wordLineInput
-
-        for row_i in range(len(Crossbar_design)):
-            for col_j in range(len(Crossbar_design[row_i])):
-                if(Crossbar_design[row_i][col_j]==1):
-                    self.Crossbar[row_i + self.RowOffSet][col_j + self.ColOffSet] = 1
         
-        self.RowOffSet = row_i + self.RowOffSet + 1
-        self.ColOffSet = col_j + self.ColOffSet + 1
+        Crossbar_design = np.array(Crossbar_design)  # Ensure it's a NumPy array
+        
+        num_rows, num_cols = Crossbar_design.shape
+
+        row_start = self.RowOffSet
+        row_end = self.RowOffSet + num_rows
+        col_start = self.ColOffSet
+        col_end = self.ColOffSet + num_cols
+
+        # Efficient slice assignment
+        self.Crossbar[row_start:row_end, col_start:col_end] = Crossbar_design
+
+        # Offset input row mapping
+        DesignIdToWordLineInputMap = {
+            split_id: row + row_start
+            for split_id, row in DesignId_To_WordLineNumber_Map.items()
+        }
+        
+        # Update Row/Col offsets
+        self.RowOffSet = row_end
+        self.ColOffSet = col_end
         
         self.SelectorLineLabels.extend(Selector_Lines_Map)
+        
         return DesignIdToWordLineInputMap
 
     def ActivateSelectorLines(self, InputAssignmentMap):
 
         # Copy the main crossbar design to execution crossbar to run executions
-        self.Crossbar_Execution = [row.copy() for row in self.Crossbar]
+        self.Crossbar_Execution = self.Crossbar.copy()
 
         #Selecting selector lines based on the InputAssignmentMap (Boolean literals)
         selector_lines = [0 for _ in self.SelectorLineLabels]
@@ -220,10 +230,19 @@ class PATH_Design_Logic_Verification:
                 selector_lines[i] = 1
 
         #Setting selectorlines in execution crossbar
-        for col_j, selector_line in enumerate(selector_lines):
-            if(not selector_line):
-                for row_i in range(len(self.Crossbar_Execution)):
-                    self.Crossbar_Execution[row_i][col_j] = 2
+        # for col_j, selector_line in enumerate(selector_lines):
+        #     if(not selector_line):
+        #         for row_i in range(len(self.Crossbar_Execution)):
+        #             self.Crossbar_Execution[row_i][col_j] = 2
+
+        n_cols = self.Crossbar_Execution.shape[1]  # 1024
+        mask   = np.zeros(n_cols, dtype=bool)      # all False
+        
+        # fill the first 162 positions with your selector condition
+        mask[:len(selector_lines)] = (np.array(selector_lines) == 0)
+
+        # broadcast one assignment
+        self.Crossbar_Execution[:, mask] = 2
 
         #Create a Output dictionary for storing the output result
         self.Output = {}
@@ -242,11 +261,14 @@ class PATH_Design_Logic_Verification:
 
         return self.Output
 
-    def TimeMultiplexCrossbar(self, Crossbar_, nonOutputBitlines):
-        Crossbar = [row.copy() for row in Crossbar_]
-        for nonOutputBitline_index in nonOutputBitlines:
-            for row_i in range(len(Crossbar)):
-                Crossbar[row_i][nonOutputBitline_index] = 2
+    def TimeMultiplexCrossbar(self, Crossbar_, nonOutputBitline_indexes):
+        # Crossbar = [row.copy() for row in Crossbar_]
+        # for nonOutputBitline_index in nonOutputBitlines:
+        #     for row_i in range(len(Crossbar)):
+        #         Crossbar[row_i][nonOutputBitline_index] = 2
+        Crossbar = Crossbar_.copy()
+        Crossbar[:, nonOutputBitline_indexes] = 2
+        
         return Crossbar
 
     def find_path_execution_in_crossbar(self, Crossbar, wordLineInputs, outputBitlineIndex):
@@ -499,208 +521,6 @@ class PATH_Design_Logic_Verification:
         plt.tight_layout()
         plt.show()
 
-    def IdealCurrentPath(self, literal_value_map):
-        
-        # literal_value_map = {'a':0, 'b':0, 'cin':1}
-        # print('literal_value_map',literal_value_map)
-        
-        #bitline labels according to crossbar
-        # self.Bitlines = ['a', '~a', '~a', 'a', 'b', '~b', '~b', 'b', 'b', '~cin', 'cin', 'O14', 'O15']
-        # self.OutputLine_Map = {'O14': 'cout', 'O15': 'sum0'}
-        # self.End_Bitline_Output_Line = 'O16'
-
-        # print('literal_value_map', literal_value_map)
-        bitlines = self.Bitlines
-
-        R_LRS = 1
-        R_HRS = 0
-        R_Off = 2
-
-        IdealOutputs = {}
-        IdealPathsOfCurrents = []
-
-        OutputPaths = {}
-
-        End_Bitline_Output_Cell = None
-        #finding output paths
-        for col,bitline in enumerate(bitlines):
-            if(self.End_Bitline_Output_Line == bitline):
-                for row in range(len(self.CrossbarResistiveStates)-1,-1,-1):
-                    if(self.CrossbarResistiveStates[row][col]==R_LRS):
-                        End_Bitline_Output_Cell = (row, col)
-            elif('O' in bitline):
-                OutputPaths[self.OutputLine_Map[bitline]] = []
-
-        # print('End_Bitline_Output_Cell',End_Bitline_Output_Cell)
-        # print('OutputLine_Map',self.OutputLine_Map)
-        
-        for clockCycle, outputLineLabel in enumerate(self.OutputLine_Map):
-            Resistance_matrix = [row.copy() for row in self.CrossbarResistiveStates]
-            SelectorLines = [0 for _ in range(len(Resistance_matrix[0]))]
-            for i,bitline in enumerate(bitlines):
-                literal = bitline
-                negation = literal.startswith('~')
-                if(negation):
-                    literal = literal[1:]
-    
-                if(outputLineLabel == literal):
-                    SelectorLines[i] = 1
-                elif(self.End_Bitline_Output_Line == literal):
-                    SelectorLines[i] = 1
-                elif(literal in literal_value_map and literal_value_map[literal]==0):
-                    if(negation):
-                        SelectorLines[i] = 1
-                    else:
-                        SelectorLines[i] = 0
-                elif(literal in literal_value_map and literal_value_map[literal]==1):
-                    if(negation):
-                        SelectorLines[i] = 0
-                    else:
-                        SelectorLines[i] = 1
-    
-            # print('outputLineLabel',outputLineLabel)
-            # print('SelectorLines',SelectorLines)
-            
-            #Swiching off the bitlines
-            for col, SelectorLine in enumerate(SelectorLines):
-                if(SelectorLine==0):
-                    for row in range(len(Resistance_matrix)):
-                        Resistance_matrix[row][col] = R_Off
-    
-            # Custom function to emulate an ordered set using a list
-            def add_to_ordered_set(ordered_set, element):
-                if element not in ordered_set:
-                    ordered_set.append(element)
-
-            literal_value_map_lst = [{'a0': 1, 'b0': 1, 'cin': 0},{'a0': 0, 'b0': 1, 'cin': 0},{'a0': 0, 'b0': 1, 'cin': 1}]
-                    
-            # Stack for depth-first traversal
-            Stack = []
-    
-            # Finding paths
-            for j in range(len(Resistance_matrix[0])):
-                if Resistance_matrix[0][j] == R_LRS:
-                    Stack.append([(0, j), [(0, j)], 'w'])  # Use a list for ordered visited nodes
-
-            # print('Resistance_matrix[0]',Resistance_matrix[0])
-            # print('Stack',Stack)
-            while Stack:
-                [(path_i, path_j), visited, last_curr] = Stack.pop()  # Pop from the stack (LIFO)
-                for i in range(len(Resistance_matrix)):
-                    if last_curr == 'w':
-                        if Resistance_matrix[i][path_j] == R_LRS and (i, path_j) not in visited:
-                            new_visited = visited.copy()
-                            add_to_ordered_set(new_visited, (i, path_j))
-                            Stack.append([(i, path_j), new_visited, 'b'])
-                    elif last_curr == 'b':
-                        if Resistance_matrix[path_i][i] == R_LRS and (path_i, i) not in visited:
-                            new_visited = visited.copy()
-                            add_to_ordered_set(new_visited, (path_i, i))
-                            Stack.append([(path_i, i), new_visited, 'w'])
-                if((path_i, path_j) == End_Bitline_Output_Cell):
-                    OutputPaths[self.OutputLine_Map[outputLineLabel]] = visited
-
-            # print('OutputPaths2',OutputPaths)
-
-            #display paths
-            label = self.OutputLine_Map[outputLineLabel]
-            temp_path = OutputPaths[label]
-            if(len(temp_path)>0):
-                IdealPathsOfCurrents.append({"literal_value_map":literal_value_map, "label":label, "OutputPath": temp_path, "lengthOfDevices":len(temp_path)})
-                IdealOutputs[label]=1
-                # print(f"{label}=1")
-            else:
-                IdealOutputs[label]=0
-                # print(f"{label}=0")
-                if(literal_value_map in literal_value_map_lst):
-                    print('literal_value_map',literal_value_map)
-                    print(f"{label}=0")
-                    # self.VisuvaliseCrossbar(initialisedCrossbar=Resistance_matrix)
-        
-        return IdealOutputs, IdealPathsOfCurrents
-        
-    def Verify_All_Ideal_Paths_In_Crossbar(self, checkWithOriginal=False, checkWithBDD=False):
-        """
-        Iterates through all rows of the truth table, inputs values into 
-        the IdealCurrentPath function, and compares outputs.
-        """
-        dfs = []
-        if(checkWithOriginal):
-            # Ensure the truth table is generated
-            if not hasattr(self, "TruthTable") or self.OriginalTruthTable is None:
-                print("Error: TruthTable not generated. Call GetTruthTables() first.")
-                return
-            dfs.append(self.OriginalTruthTable)
-        if(checkWithBDD):
-            # Ensure the truth table is generated
-            if not hasattr(self, "TruthTable") or self.BDDTruthTable is None:
-                print("Error: TruthTable not generated. Call GetTruthTables() first.")
-                return
-            dfs.append(self.BDDTruthTable)
-    
-        print("Verifying all ideal paths in the crossbar...")
-
-        for df in dfs:
-
-            mismatches = 0  # Track number of mismatches
-    
-            input_columns = [col for col in df.columns if col not in self.outputs]  # Variables
-            output_columns = [col for col in df.columns if col in self.outputs]  # Expressions (functions)
-
-            # print('df.columns',df.columns)
-            # print('input_columns',input_columns)
-            # print('output_columns',output_columns)
-    
-            self.AllIdealPathOfCurrent = {}
-            
-            # Iterate over each row in the truth table
-            for idx, row in df.iterrows():
-                # if(idx%1000!=0):
-                #     continue
-                # print(idx)
-                input_assignment = {var: int(row[var]) for var in input_columns}  # Convert inputs to dictionary
-                expected_outputs = {expr: int(row[expr]) for expr in output_columns}  # Expected output values
-    
-                # Compute output using IdealCurrentPath function
-                computed_outputs, IdealPathsOfCurrents = self.IdealCurrentPath(input_assignment)
-
-                # Compare computed outputs with expected outputs
-                for expr in output_columns:
-                    if computed_outputs.get(expr) != expected_outputs[expr]:
-                        print(f"Mismatch at row {idx}: Inputs {input_assignment}, "
-                              f"Expected {expected_outputs}, Got {computed_outputs}")
-                        
-                        mismatches += 1
-                        
-                totlengthTemp = []
-    
-                # print('input_assignment', idx, input_assignment)   #debugprint
-                
-                maxLengthOfDevices = 0
-                for IdealPathsOfCurrent in IdealPathsOfCurrents:
-                    literal_value_map = IdealPathsOfCurrent["literal_value_map"]
-                    label = IdealPathsOfCurrent["label"]
-                    OutputPath = IdealPathsOfCurrent["OutputPath"]
-                    lengthOfDevices = IdealPathsOfCurrent["lengthOfDevices"]
-    
-                    if(frozenset(literal_value_map.items()) not in self.AllIdealPathOfCurrent):
-                        self.AllIdealPathOfCurrent[frozenset(literal_value_map.items())] = {}
-                    self.AllIdealPathOfCurrent[frozenset(literal_value_map.items())][label]  = {"OutputPath":OutputPath, "lengthOfDevices":lengthOfDevices}
-                    # self.AllIdealPathOfCurrent[frozenset(literal_value_map.items())][label]  = {"lengthOfDevices":lengthOfDevices}
-    
-                    totlengthTemp.append(lengthOfDevices)
-                    # print(label, OutputPath)
-    
-                # print('sum totlengthTemp',sum(totlengthTemp))
-                # if(len(totlengthTemp)):
-                #     print('avg totlengthTemp',sum(totlengthTemp)/len(totlengthTemp))
-                # print('expected_outputs',idx, expected_outputs)
-                # print('computed_outputs', computed_outputs)
-                
-            print(f"Crossbar verification completed. Total mismatches: {mismatches}")
-            
-            return mismatches
-
     def RunRandomTestCases(self, num_tests=10, RunAllTests=False):
         # Step 1: Extract unique positive variable names from SelectorLineLabels
         input_vars = set()
@@ -803,7 +623,7 @@ class PATH_Design_Logic_Verification:
                 input_assignment = {var: random.randint(0, 1) for var in input_vars}
         
                 # Copy the main crossbar design to execution crossbar to run executions
-                self.Crossbar_Execution = [row.copy() for row in self.Crossbar]
+                self.Crossbar_Execution = self.Crossbar.copy()
         
                 #Selecting selector lines based on the input_assignment (Boolean literals)
                 selector_lines = [0 for _ in self.SelectorLineLabels]

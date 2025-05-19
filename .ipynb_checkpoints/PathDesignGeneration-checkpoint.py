@@ -55,10 +55,12 @@ class PATH:
         
         self.output_node_index = 0
         
-        self.Processed_graphs_Map = {}
+        self.Processed_height_constraint_graphs_Map = {}
+        self.Processed_group_graphs_Map = {}
         self.Included_nodes = set()
 
         self.OutputLine_Map = {}
+        self.Topological_order = []  #design_ID_groups - order of execution
 
     def parse_file_to_NetworkXGraph(self, filename):
         """ Reads the file and extracts nodes, variables, and outputs. """
@@ -961,35 +963,122 @@ class PATH:
             # for leaf in leaf_nodes:
             #     print(f"{leaf} → {processed_graph.nodes[leaf]}")
 
-            self.Processed_graphs_Map[frozenset(in_split_ids)] = ({'processed_graph':processed_graph,'OutputLine_Map':OutputLine_Map})
+            self.Processed_height_constraint_graphs_Map[frozenset(in_split_ids)] = ({'processed_graph':processed_graph,'OutputLine_Map':OutputLine_Map})
+            
             unprocessed_graphs.extend(split_graphs)
             print()
             # break
             
         #traverse through the graph and split the graph where the height constraing fails
 
-        self.GraphProcessPhase = "4. Graph Splitting"
+        self.GraphProcessPhase = "4. Graph Splitting with Height constraint"
+
+    def get_output_node_dependencies(self, graph):
+        output_node_dependencies_map = {}
+        
+        # Step 1: Find output nodes (nodes with out-degree 0)
+        output_nodes = [node for node in graph.nodes if graph.out_degree(node) == 0]
+        
+        for output_node in output_nodes:
+            # Step 2: Find all ancestors (predecessors) of the output node
+            ancestors = nx.ancestors(graph, output_node)
+            # Optionally include the output node itself
+            ancestors.add(output_node)
+            # Get the literal of the output node as key
+            output_literal = graph.nodes[output_node].get("literal", str(output_node))
+    
+            u1_nodes = {ancestor for ancestor in ancestors if graph.nodes[ancestor]['BipartitePart']=='U1'}
+            u2_nodes = {ancestor for ancestor in ancestors if graph.nodes[ancestor]['BipartitePart']=='U2'}
+            
+            output_node_dependencies_map[output_literal] = (u1_nodes, u2_nodes)
+        
+        return output_node_dependencies_map
+    
+    def greedy_merge_dependency_sets(self, dependency_map, H):
+        # Step 1: Convert dependency map to list of (key, all_nodes_set)
+        sets_list = []
+        for key, (u1, u2) in dependency_map.items():
+            sets_list.append((key, u1, u2))
+    
+        # Step 2: Sort by size descending (or overlap potential, if available)
+        sets_list.sort(key=lambda x: -len(x[2]))
+    
+        merged_groups = []
+        used_keys = set()
+    
+        i = 0
+        while(i<len(sets_list)):
+            (key_i, set_i_u1, set_i_u2) = sets_list[i]
+            if key_i in used_keys:
+                i += 1
+                continue
+            
+            merged_u1 = set_i_u1.copy()
+            merged_u2 = set_i_u2.copy()
+            group_keys = [key_i]
+            used_keys.add(key_i)
+            
+            j = i + 1
+            while(j<len(sets_list)):
+                (key_j, set_j_u1, set_j_u2) = sets_list[j]
+                if key_j in used_keys:
+                    j += 1
+                    continue
+                if len(merged_u1 | set_j_u1) <= H and len(merged_u2 | set_j_u2) <= H:
+                    merged_u1 |= set_j_u1
+                    merged_u2 |= set_j_u2
+                    group_keys.append(key_j)
+                    used_keys.add(key_j)
+                j += 1
+                
+            merged_groups.append((group_keys, merged_u1, merged_u2))
+            i += 1
+    
+        return merged_groups
 
     def GraphSplittinWithSizeConstraint(self, size=None):
 
         if(size is not None):
            self.SizeThereshold = size
 
+        for design_ID in self.Processed_height_constraint_graphs_Map:
+            processed_graph = self.Processed_height_constraint_graphs_Map[design_ID]['processed_graph']
+            OutputLine_Map = self.Processed_height_constraint_graphs_Map[design_ID]['OutputLine_Map']
+
+            # divide the processed_graph into processed_group_graph
+            output_node_dependencies_map = self.get_output_node_dependencies(processed_graph)
+            merged_groups = self.greedy_merge_dependency_sets(output_node_dependencies_map, self.SizeThereshold)
+
+            for idx, (group_keys, merged_set_u1, merged_set_u2) in enumerate(merged_groups):
+                OutputLine_group_Map = {group_key:OutputLine_Map[group_key] for group_key in group_keys}
+                all_nodes_in_group = merged_set_u1 | merged_set_u2
+
+                processed_group_graph = processed_graph.subgraph(all_nodes_in_group).copy()
+
+                #create design_id_group with idx and design_id
+                design_ID_group = (design_ID, idx)
+                self.Topological_order.append(design_ID_group)
+                self.Processed_group_graphs_Map[design_ID_group] = ({'processed_group_graph':processed_group_graph,'OutputLine_group_Map':OutputLine_group_Map})
+
+        self.GraphProcessPhase = "5. Graph Splitting with Crossbar size constraint"
+
+        
+
     def CrossbarDesignRelalization(self):
 
-        for Processed_graphs_Map_key in self.Processed_graphs_Map:
-            processed_graph = self.Processed_graphs_Map[Processed_graphs_Map_key]['processed_graph']
-            OutputLine_Map = self.Processed_graphs_Map[Processed_graphs_Map_key]['OutputLine_Map']
+        for design_ID_group in self.Processed_group_graphs_Map:
+            processed_group_graph = self.Processed_group_graphs_Map[design_ID_group]['processed_group_graph']
+            OutputLine_group_Map = self.Processed_group_graphs_Map[design_ID_group]['OutputLine_group_Map']
             
             colMap, rowMap, bit_line_counter  = {}, {}, 0
             word_lines = []
-            for node in processed_graph.nodes:
-                if(processed_graph.nodes[node]['BipartitePart']=='U2'):
-                    colMap[processed_graph.nodes[node]['ID']] = bit_line_counter
+            for node in processed_group_graph.nodes:
+                if(processed_group_graph.nodes[node]['BipartitePart']=='U2'):
+                    colMap[processed_group_graph.nodes[node]['ID']] = bit_line_counter
                     bit_line_counter += 1
-                if(processed_graph.nodes[node]['BipartitePart']=='U1'):
-                    rowMap[processed_graph.nodes[node]['ID']] = int(processed_graph.nodes[node]['literal'])
-                    word_lines.append(int(processed_graph.nodes[node]['literal']))
+                if(processed_group_graph.nodes[node]['BipartitePart']=='U1'):
+                    rowMap[processed_group_graph.nodes[node]['ID']] = int(processed_group_graph.nodes[node]['literal'])
+                    word_lines.append(int(processed_group_graph.nodes[node]['literal']))
 
             word_lines_count = len(word_lines)
             word_lines.sort()
@@ -1003,45 +1092,51 @@ class PATH:
             print(colMap, rowMap)
             print('======================')
             print()
+
+            OutputLine_group_selectorLines_Map = {}
+            output_node_dependencies_map_temp = self.get_output_node_dependencies(processed_group_graph)
+            for output_node_label in output_node_dependencies_map_temp:
+                u2_node_ids = output_node_dependencies_map_temp[output_node_label][1]
+                OutputLine_group_selectorLines_Map[output_node_label] = [colMap[u2_node_id] for u2_node_id in u2_node_ids]
+            self.Processed_group_graphs_Map[design_ID_group]['OutputLine_group_selectorLines_Map'] = OutputLine_group_selectorLines_Map
             
             #Setting dimention of BDD
-            self.Processed_graphs_Map[Processed_graphs_Map_key]['BDD_dimentions'] = f"{word_lines_count} x {bit_line_counter}"
+            self.Processed_group_graphs_Map[design_ID_group]['BDD_dimentions'] = f"{word_lines_count} x {bit_line_counter}"
 
             #Setting selectorLine labels
-            self.Processed_graphs_Map[Processed_graphs_Map_key]['Selector_Lines_Map'] = [f"C{i+1}" for i in range(bit_line_counter)]
+            self.Processed_group_graphs_Map[design_ID_group]['Selector_Lines_Map'] = [f"C{i+1}" for i in range(bit_line_counter)]
             for col in colMap:
-                self.Processed_graphs_Map[Processed_graphs_Map_key]['Selector_Lines_Map'][colMap[col]] = processed_graph.nodes[col]['literal']
+                self.Processed_group_graphs_Map[design_ID_group]['Selector_Lines_Map'][colMap[col]] = processed_group_graph.nodes[col]['literal']
 
             #Initialising crossbar design
-            self.Processed_graphs_Map[Processed_graphs_Map_key]['Crossbar_design'] = [[0 for _ in range(bit_line_counter)] for _ in range(word_lines_count)]
+            self.Processed_group_graphs_Map[design_ID_group]['Crossbar_design'] = [[0 for _ in range(bit_line_counter)] for _ in range(word_lines_count)]
 
-            self.Processed_graphs_Map[Processed_graphs_Map_key]['DesignIdItemToWordLineInputMap'] = {} #{design_id:wordlinenum}
-                
-            # for i,(u, v, data) in enumerate(processed_graph.edges(data=True)):
-            #     print(u, processed_graph.nodes[u])
-            #     print(v, processed_graph.nodes[v])
-            #     print('-------------------')
+            self.Processed_group_graphs_Map[design_ID_group]['DesignIdItemToWordLineInputMap'] = {} #{design_id:wordlinenum}
 
-            for in_split_id in Processed_graphs_Map_key:
-                processed_graph = self.Processed_graphs_Map[Processed_graphs_Map_key]['processed_graph']
-                input_node_id = [node for node in processed_graph.nodes if in_split_id in processed_graph.nodes[node]["in_split_id"]][0]
-                self.Processed_graphs_Map[Processed_graphs_Map_key]['DesignIdItemToWordLineInputMap'][in_split_id] = rowMap[input_node_id]
+            input_split_IDs, _ = design_ID_group
+
+            for input_split_id in input_split_IDs:
+                input_node_id_templst = [node for node in processed_group_graph.nodes if input_split_id in processed_group_graph.nodes[node]["in_split_id"]]
+                if(len(input_node_id_templst)!=1):
+                    continue
+                input_node_id = input_node_id_templst[0]
+                self.Processed_group_graphs_Map[design_ID_group]['DesignIdItemToWordLineInputMap'][input_split_id] = rowMap[input_node_id]
                 
             
-            for i,(u, v, data) in enumerate(processed_graph.edges(data=True)):
-                if(processed_graph.nodes[u]['BipartitePart']=='U2'):
-                    row_i = rowMap[processed_graph.nodes[v]['ID']]
-                    col_j = colMap[processed_graph.nodes[u]['ID']]
+            for i,(u, v, data) in enumerate(processed_group_graph.edges(data=True)):
+                if(processed_group_graph.nodes[u]['BipartitePart']=='U2'):
+                    row_i = rowMap[processed_group_graph.nodes[v]['ID']]
+                    col_j = colMap[processed_group_graph.nodes[u]['ID']]
                     
                 else:
-                    row_i = rowMap[processed_graph.nodes[u]['ID']]
-                    col_j = colMap[processed_graph.nodes[v]['ID']]
+                    row_i = rowMap[processed_group_graph.nodes[u]['ID']]
+                    col_j = colMap[processed_group_graph.nodes[v]['ID']]
                 
-                self.Processed_graphs_Map[Processed_graphs_Map_key]['Crossbar_design'][row_i][col_j] = 1
+                self.Processed_group_graphs_Map[design_ID_group]['Crossbar_design'][row_i][col_j] = 1
 
-            self.Processed_graphs_Map[Processed_graphs_Map_key]['LongestPath'] = []
+            self.Processed_group_graphs_Map[design_ID_group]['LongestPath'] = []
     
-            longPath = self.LongestpathInTreeAndCrossbar(processed_graph)
+            longPath = self.LongestpathInTreeAndCrossbar(processed_group_graph)
 
             CrossbarLongPath = []
             for j in range(len(longPath)-1):
@@ -1053,7 +1148,7 @@ class PATH:
                 
                 CrossbarLongPath.append((row_index, col_index))
                     
-            self.Processed_graphs_Map[Processed_graphs_Map_key]['LongestPath']  = CrossbarLongPath
+            self.Processed_group_graphs_Map[design_ID_group]['LongestPath']  = CrossbarLongPath
             
         self.GraphProcessPhase = "5. Crossbar Realization"
 

@@ -127,6 +127,40 @@ class Bus:
         # print("Computed Outputs:", visited_outputs)
         return visited_outputs
 
+    def CalibrateHRSValues(self, Optimisation=True):
+        if(not Optimisation):
+            all_combinations = list(itertools.product([0, 1], repeat=len(self.input_vars)))
+            num_tests = len(all_combinations)
+            input_assignments = [
+                dict(zip(self.input_vars, combo)) for combo in all_combinations
+            ]
+
+            for i, input_assignment in enumerate(input_assignments):
+                # Run model and golden model        
+                golden_output = self.GoldenModel(input_assignment, self.MainBDD_For_GoldenModel)
+    
+                model_output = self.ExecuteDesignsInTopologicalOrder(input_assignment)
+
+                #remove unwanted keys that are not part of golden outputs
+                model_processed_output = {k: v for k, v in model_output.items() if k in golden_output}
+                
+                # Compare
+                match = (model_processed_output == golden_output)
+
+                # if(match):
+            return
+
+    def CalibrateHRSValues(self, Optimisation=True):
+        for design_ID_group in self.crossbar_designs:
+            crossbar_design_instance       = self.crossbar_designs[design_ID_group]['crossbar_design_instance']
+            OutputLine_group_Map           = self.crossbar_designs[design_ID_group]['OutputLine_group_Map']
+            DesignIdItemToWordLineInputMap = self.crossbar_designs[design_ID_group]["DesignIdItemToWordLineInputMap"]
+
+            wordLineInputs = list(DesignIdItemToWordLineInputMap.values())
+            
+            crossbar_design_instance.FindOptimalHRSvalue(design_ID_group, OutputLine_group_Map, wordLineInputs)
+            
+
     def RunRandomTestCases(self, num_tests=10, RunAllTests=False):
         
         test_results = []
@@ -273,6 +307,8 @@ class PATH_Design_Analog_Verification:
         self.OnesCurrentFromDesignMap = {design_ID:[] for design_ID in self.Design_Map}
         self.ZerosCurrentFromDesignMap = {design_ID:[] for design_ID in self.Design_Map}
 
+        self.HRS = {design_ID:None for design_ID in self.Design_Map}
+
         for design_ID, processed_graph_map_value_map in self.Design_Map.items():
             processed_group_graph              = processed_graph_map_value_map['processed_group_graph']
             Crossbar_design                    = processed_graph_map_value_map['Crossbar_design']
@@ -389,7 +425,7 @@ class PATH_Design_Analog_Verification:
             # print('path_j', path_i, path_j)
             if(path_j==outputBitlineIndex):
                 # print('outputBitlineIndex',outputBitlineIndex)
-                # print('visited',visited)
+                print('visited',visited)
                 return True
         return False
         
@@ -473,7 +509,7 @@ class PATH_Design_Analog_Verification:
 
         return Output
     
-    def find_path_current_execution_in_crossbar(self, design_ID, Crossbar, wordLineInputs, outputBitlineIndex):
+    def find_path_current_execution_in_crossbar(self, design_ID, Crossbar, wordLineInputs, outputBitlineIndex, R_HRS=4e7):
         # Custom function to emulate an ordered set using a list
         def add_to_ordered_set(ordered_set, element):
             if element not in ordered_set:
@@ -483,13 +519,16 @@ class PATH_Design_Analog_Verification:
         # R_HRS = self.R_HRS_Map[design_ID]  # High-resistance state of the memory cell
         # R_LRS = self.R_LRS  # Low-resistance state
 
-        R_HRS = 4e7
-        R_LRS = 2000
+        if(R_HRS==4e7 and self.HRS[design_ID] is not None):
+            R_HRS,_ = self.HRS[design_ID]
+        
+        # R_HRS = 4e7
+        R_LRS = 200
         
         R_Line_Out = 200  # 200 ohms from each column node to GND
-        R_Not = 1e10  # Large resistance for non-output columns
+        R_Not = 1e12  # Large resistance for non-output columns
         R_source   = 100  # Series resistor from 0.2 V source to row 0
-        R_Off = 1e10
+        R_Off = 1e12
         
         # Voltage source for the first row (0.2V)
         Vsrc = 0.2  
@@ -667,6 +706,218 @@ class PATH_Design_Analog_Verification:
         plt.colorbar(heatmap, label="Resistive State", orientation="vertical")
         plt.tight_layout()
         plt.show()
+
+    def CreateCrossbarDesignFromLongestPath(self, LongestPath, crossbar_design_size, crossbar_size):
+        crossbar = np.full(crossbar_size, 2)
+        path_cols = {y for (_, y) in LongestPath}
+
+        crossbar[:,list(path_cols)] = 0
+        
+        for (x, y) in LongestPath:
+            crossbar[x][y] = 1
+
+        return crossbar
+
+    def CreateCrossbarDesignFromDesign(self, crossbar_size, Crossbar_design, EnabledSelectorLines):
+        crossbar = np.full(crossbar_size, 0)  # Fill with default value 2 (inactive)
+    
+        # Copy the input Crossbar_design into crossbar
+        for row_i in range(len(Crossbar_design)):
+            for col_j in range(len(Crossbar_design[0])):
+                crossbar[row_i][col_j] = Crossbar_design[row_i][col_j]
+    
+        # Disable columns not in EnabledSelectorLines
+        for col_j in range(crossbar_size[1]):  # Loop over columns
+            if col_j not in EnabledSelectorLines:
+                crossbar[:, col_j] = 2  # Set the entire column to 2 (disabled)
+    
+        return crossbar
+
+    
+    def ModifyCrossbarforZeroCurrent(self, crossbar, inputRow, outputCol):
+
+        mod_crossbar = crossbar.copy()
+        rows, cols = len(mod_crossbar), len(mod_crossbar[0])
+        R_LRS = 1
+        all_paths = []
+    
+        def dfs(position, visited, current_path, last_type):
+            row, col = position
+
+            # print('current_path',current_path[-1], last_type)
+            # print('col',col)
+    
+            # Check if reached output column
+            if col == outputCol and last_type == 'w':
+    
+                # Break the path in the middle
+                d = len(current_path)
+                # mid_index = d // 2
+                mid_index = d - 2
+                mid_row, mid_col = current_path[mid_index]
+                mod_crossbar[mid_row][mid_col] = 0  # Disable the path at midpoint
+                # print('mid_row, mid_col', mid_row, mid_col)
+                return
+
+            if last_type == 'w':
+                # From wordline → traverse column (same col, all rows)
+                for r in range(rows):
+                    if r != row and mod_crossbar[r][col] == R_LRS and (r, col) not in visited:
+                        visited.add((r, col))
+                        current_path.append((r, col))
+                        dfs((r, col), visited, current_path, 'b')
+                        current_path.pop()
+                        visited.remove((r, col))
+            elif last_type == 'b':
+                # From bitline → traverse row (same row, all cols)
+                for c in range(cols):
+                    if c != col and mod_crossbar[row][c] == R_LRS and (row, c) not in visited:
+                        visited.add((row, c))
+                        current_path.append((row, c))
+                        dfs((row, c), visited, current_path, 'w')
+                        current_path.pop()
+                        visited.remove((row, c))
+    
+        # Start DFS from all LRS cells in input rows
+        for c in range(cols):
+            if mod_crossbar[inputRow][c] == R_LRS:
+                start = (inputRow, c)
+                print('Starting dfs...')
+                dfs(start, {start}, [start], 'w')
+    
+        return mod_crossbar
+                                            
+    def FindOptimalHRSvalue(self, design_ID_group, OutputLine_group_Map, wordLineInputs):
+
+        Guardbound_Threshold = 5e-2
+        best_guardBound = None
+
+        Crossbar_design                    = self.Design_Map[design_ID_group]['Crossbar_design']
+        OutputLine_group_selectorLines_Map = self.Design_Map[design_ID_group]['OutputLine_group_selectorLines_Map']
+        OutputLine_group_Map               = self.Design_Map[design_ID_group]['OutputLine_group_Map']
+        Selector_Lines_Map                 = self.Design_Map[design_ID_group]['Selector_Lines_Map']
+
+        ############### Find minimum Ones current ####################
+
+        LongestPath = self.Design_Map[design_ID_group]['LongestPath']
+        if(self.Design_Map[design_ID_group]['DesignIdItemToWordLineInputMap']=={}):
+            WordLineInput_one = 0
+        else:
+            # WordLineInput_one = min(list(self.Design_Map[design_ID_group]['DesignIdItemToWordLineInputMap'].values()))
+            WordLineInput_one = LongestPath[0][0]
+
+        crossbar_design_size=(len(Crossbar_design), len(Crossbar_design[0]))
+        crossbar_size=(self.Crossbar.shape[0], self.Crossbar.shape[1])
+        
+        # Create Crossbar design from LongestPath
+        Crossbar_one = self.CreateCrossbarDesignFromLongestPath(LongestPath, 
+                                                            crossbar_design_size=crossbar_design_size,
+                                                            crossbar_size=crossbar_size)
+        outputBitlineIndex_one = LongestPath[-1][1]
+
+        # print('LongestPath 1',LongestPath)
+        # print('foundPath 1',foundPath)
+        # for row in Crossbar_one:
+        #     print(row,'a')
+        
+        # OnesCurrent = self.find_path_current_execution_in_crossbar(design_ID_group, Crossbar, [WordLineInput], outputBitlineIndex, R_HRS=4e7)
+
+        ##################### Find maximum Zeros current ####################
+
+        if(self.Design_Map[design_ID_group]['DesignIdItemToWordLineInputMap']=={}):
+            WordLineInputs_zero = [0]
+        else:
+            WordLineInputs_zero = list(self.Design_Map[design_ID_group]['DesignIdItemToWordLineInputMap'].values())
+            # WordLineInputs_zero = list(self.Design_Map[design_ID_group]['DesignIdItemToWordLineInputMap'].values())[0:1]
+        
+        
+        ######################## Binary Search for R_HRS ########################
+        low = 0
+        high = 2e16
+        best_R_HRS = None
+        GuardBound = None
+        max_iterations = 40
+        iteration = 0
+    
+        while high - low > Guardbound_Threshold and iteration < max_iterations:
+            mid = (low + high) // 2
+            R_HRS = mid
+            OnesCurrent = self.find_path_current_execution_in_crossbar(
+                design_ID_group, Crossbar_one, [WordLineInput_one], outputBitlineIndex_one, R_HRS=R_HRS
+            )
+            
+            
+            # ZerosCurrent calculation 
+            ZerosCurrent_lst = []
+            for outputLabel in OutputLine_group_Map:
+                # outputBitlineIndex_zero       = OutputLine_group_Map[outputLabel] wrong
+                outputBitlineIndex_zero       = Selector_Lines_Map.index(outputLabel)
+                # print('outputBitlineIndex_zero',outputBitlineIndex_zero)
+                
+                EnabledSelectorLines = OutputLine_group_selectorLines_Map[outputLabel]
+                
+                Crossbar_zero = self.CreateCrossbarDesignFromDesign(
+                                            crossbar_size,
+                                            Crossbar_design,
+                                            EnabledSelectorLines)
+
+                print('WordLineInputs_zero', WordLineInputs_zero)
+                print('outputBitlineIndex_zero', outputBitlineIndex_zero)
+                for WordLineInput in WordLineInputs_zero:
+                    Crossbar_zero_mod = self.ModifyCrossbarforZeroCurrent(Crossbar_zero, WordLineInput, outputBitlineIndex_zero)
+
+                    foundPath = self.find_path_execution_in_crossbar(Crossbar_zero_mod, [WordLineInput], outputBitlineIndex_zero)
+
+                    print('foundPath 0', foundPath,'============================================')
+                    
+                    ZerosCurrent = self.find_path_current_execution_in_crossbar(
+                        design_ID_group, Crossbar_zero_mod, [WordLineInput], outputBitlineIndex_zero, R_HRS=R_HRS
+                    )
+                    
+                    ZerosCurrent_lst.append(ZerosCurrent)
+
+            ZerosCurrent = max(ZerosCurrent_lst)
+            # print('ZerosCurrent',ZerosCurrent)
+
+            guardBound = OnesCurrent - ZerosCurrent
+
+            # print('design_ID_group',design_ID_group)
+            # print('WordLineInputs_zero',WordLineInputs_zero)
+            # print('OnesCurrent',OnesCurrent,"|",'ZerosCurrent',ZerosCurrent)
+            # print('guardBound', guardBound)
+            # print('R_HRS',R_HRS)
+            
+            if guardBound > Guardbound_Threshold:
+                best_R_HRS = R_HRS
+                best_guardBound = guardBound
+                
+                high = mid  # Try smaller R_HRS to find minimal satisfying value
+            else:
+                low = mid  # Increase R_HRS
+    
+            iteration += 1
+
+        print()
+        print('design_ID_group', design_ID_group)
+        print('WordLineInputs_zero',WordLineInputs_zero)
+        print('ZerosCurrent',ZerosCurrent)
+        print('OnesCurrent',OnesCurrent)
+        print('R_HRS:', R_HRS, 'best_guardBound:', best_guardBound)
+        self.HRS[design_ID_group] = (best_R_HRS, best_guardBound)
+
+        if(best_guardBound==None):
+            
+            raise ValueError("best_guardBound is None. Expected a valid value.")
+
+        # processed_group_graph              = processed_graph_map_value_map['processed_group_graph']
+        # Crossbar_design                    = processed_graph_map_value_map['Crossbar_design']
+        # Selector_Lines_Map                 = processed_graph_map_value_map['Selector_Lines_Map']
+        # OutputLine_group_Map               = processed_graph_map_value_map['OutputLine_group_Map']
+        # DesignIdItemToWordLineInputMap     = processed_graph_map_value_map['DesignIdItemToWordLineInputMap']
+        # LongestPath                        = processed_graph_map_value_map['LongestPath']
+        # OutputLine_group_selectorLines_Map = processed_graph_map_value_map['OutputLine_group_selectorLines_Map']
+            
+            
 
     def RunRandomTestCasesOnEachDesign(self, num_tests=10):
 

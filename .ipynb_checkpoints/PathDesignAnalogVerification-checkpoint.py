@@ -29,6 +29,12 @@ class Bus:
         self.MainBDD_For_GoldenModel = MainBDD_For_GoldenModel
         self.Topological_order = Topological_order
 
+        self.WorstCaseMaxZero = {}
+        self.WorstCaseMinOne = {}
+        
+        self.OnesCurrentFromDesignMap = {}
+        self.ZerosCurrentFromDesignMap = {}
+        
         self.input_vars = self.getInputVaribles()
 
         self.Output = self.getOutputMap()
@@ -63,6 +69,8 @@ class Bus:
             "DesignIdItemToWordLineInputMap":DesignIdItemToWordLineInputMap, 
             "OutputLine_group_Map":OutputLine_group_Map
         }
+        self.OnesCurrentFromDesignMap[design_ID] = []
+        self.ZerosCurrentFromDesignMap[design_ID] = []
 
     def GoldenModel(self, input_assignment, graph=None):
 
@@ -158,9 +166,11 @@ class Bus:
 
             wordLineInputs = list(DesignIdItemToWordLineInputMap.values())
             
-            crossbar_design_instance.FindOptimalHRSvalue(design_ID_group, OutputLine_group_Map, wordLineInputs)
-            
+            maxZeroCurrent, minOneCurrent = crossbar_design_instance.FindOptimalHRSvalue(design_ID_group, OutputLine_group_Map, wordLineInputs)
 
+            self.WorstCaseMaxZero[design_ID_group] = maxZeroCurrent
+            self.WorstCaseMinOne[design_ID_group] = minOneCurrent
+    
     def RunRandomTestCases(self, num_tests=10, RunAllTests=False):
         
         test_results = []
@@ -257,7 +267,7 @@ class Bus:
             
             selector_lines = crossbar_design.ActivateSelectorLines(input_assignment)
             
-            design_ID_group_output = crossbar_design.Execute(design_ID_group, wordLineInputs, OutputLine_group_Map, selector_lines)
+            design_ID_group_output, outputCurrentMap = crossbar_design.Execute(design_ID_group, wordLineInputs, OutputLine_group_Map, selector_lines)
 
             #debug
             # print('design_ID_group_output', design_ID_group_output)
@@ -269,6 +279,12 @@ class Bus:
                         design_ID_item_activation_set.add(outputLabel)
                 else:
                     Output[outputLabel] = design_ID_group_output[outputLabel]
+
+                outputCurrent = outputCurrentMap[outputLabel]
+                if(design_ID_group_output[outputLabel]):
+                    self.OnesCurrentFromDesignMap[design_ID_group].append(outputCurrent)
+                else:
+                    self.ZerosCurrentFromDesignMap[design_ID_group].append(outputCurrent)
         
         return Output
             
@@ -303,9 +319,6 @@ class PATH_Design_Analog_Verification:
         self.Crossbar_Execution = None
 
         self.ColOffSetForDesign_ID_group = {}
-
-        self.OnesCurrentFromDesignMap = {design_ID:[] for design_ID in self.Design_Map}
-        self.ZerosCurrentFromDesignMap = {design_ID:[] for design_ID in self.Design_Map}
 
         self.HRS = {design_ID:None for design_ID in self.Design_Map}
 
@@ -425,7 +438,7 @@ class PATH_Design_Analog_Verification:
             # print('path_j', path_i, path_j)
             if(path_j==outputBitlineIndex):
                 # print('outputBitlineIndex',outputBitlineIndex)
-                print('visited',visited)
+                # print('visited',visited)
                 return True
         return False
         
@@ -435,6 +448,7 @@ class PATH_Design_Analog_Verification:
         # print('OutputLine_group_Map', OutputLine_group_Map)
 
         Output = {}
+        OutputCurrentMap = {}
 
         #expand mask to not have any selector lines other than the design_id_group columns
         selector_lines_for_design = selector_lines.copy()
@@ -499,15 +513,15 @@ class PATH_Design_Analog_Verification:
             # print('MultiplexedCrossbar', len(MultiplexedCrossbar), len(MultiplexedCrossbar[0]), wordLineInputs, outputBitlineIndex)
 
             outputCurrent = self.find_path_current_execution_in_crossbar(design_ID_group, MultiplexedCrossbar, wordLineInputs, outputBitlineIndex)
+
+            OutputCurrentMap[OutputLine_group_Map[outputLine]] = outputCurrent
             
             if(PathCurrent):
                 Output[OutputLine_group_Map[outputLine]] = 1
-                self.OnesCurrentFromDesignMap[design_ID_group].append(outputCurrent)
             else:
                 Output[OutputLine_group_Map[outputLine]] = 0
-                self.ZerosCurrentFromDesignMap[design_ID_group].append(outputCurrent)
 
-        return Output
+        return Output, OutputCurrentMap
     
     def find_path_current_execution_in_crossbar(self, design_ID, Crossbar, wordLineInputs, outputBitlineIndex, R_HRS=4e7):
         # Custom function to emulate an ordered set using a list
@@ -719,7 +733,7 @@ class PATH_Design_Analog_Verification:
         return crossbar
 
     def CreateCrossbarDesignFromDesign(self, crossbar_size, Crossbar_design, EnabledSelectorLines):
-        crossbar = np.full(crossbar_size, 0)  # Fill with default value 2 (inactive)
+        crossbar = np.full(crossbar_size, 0)  # Fill with default value 0 (inactive)
     
         # Copy the input Crossbar_design into crossbar
         for row_i in range(len(Crossbar_design)):
@@ -752,8 +766,8 @@ class PATH_Design_Analog_Verification:
     
                 # Break the path in the middle
                 d = len(current_path)
-                # mid_index = d // 2
-                mid_index = d - 2
+                mid_index = d // 2
+                # mid_index = d - 2
                 mid_row, mid_col = current_path[mid_index]
                 mod_crossbar[mid_row][mid_col] = 0  # Disable the path at midpoint
                 # print('mid_row, mid_col', mid_row, mid_col)
@@ -846,7 +860,6 @@ class PATH_Design_Analog_Verification:
                 design_ID_group, Crossbar_one, [WordLineInput_one], outputBitlineIndex_one, R_HRS=R_HRS
             )
             
-            
             # ZerosCurrent calculation 
             ZerosCurrent_lst = []
             for outputLabel in OutputLine_group_Map:
@@ -890,6 +903,8 @@ class PATH_Design_Analog_Verification:
             if guardBound > Guardbound_Threshold:
                 best_R_HRS = R_HRS
                 best_guardBound = guardBound
+                best_OnesCurrent = OnesCurrent
+                best_ZerosCurrent = ZerosCurrent
                 
                 high = mid  # Try smaller R_HRS to find minimal satisfying value
             else:
@@ -906,17 +921,9 @@ class PATH_Design_Analog_Verification:
         self.HRS[design_ID_group] = (best_R_HRS, best_guardBound)
 
         if(best_guardBound==None):
-            
             raise ValueError("best_guardBound is None. Expected a valid value.")
 
-        # processed_group_graph              = processed_graph_map_value_map['processed_group_graph']
-        # Crossbar_design                    = processed_graph_map_value_map['Crossbar_design']
-        # Selector_Lines_Map                 = processed_graph_map_value_map['Selector_Lines_Map']
-        # OutputLine_group_Map               = processed_graph_map_value_map['OutputLine_group_Map']
-        # DesignIdItemToWordLineInputMap     = processed_graph_map_value_map['DesignIdItemToWordLineInputMap']
-        # LongestPath                        = processed_graph_map_value_map['LongestPath']
-        # OutputLine_group_selectorLines_Map = processed_graph_map_value_map['OutputLine_group_selectorLines_Map']
-            
+        return best_ZerosCurrent, best_OnesCurrent
             
 
     def RunRandomTestCasesOnEachDesign(self, num_tests=10):

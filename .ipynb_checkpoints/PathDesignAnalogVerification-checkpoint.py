@@ -328,7 +328,7 @@ class PATH_Design_Analog_Verification:
             Selector_Lines_Map                 = processed_graph_map_value_map['Selector_Lines_Map']
             OutputLine_group_Map               = processed_graph_map_value_map['OutputLine_group_Map']
             DesignIdItemToWordLineInputMap     = processed_graph_map_value_map['DesignIdItemToWordLineInputMap']
-            LongestPath                        = processed_graph_map_value_map['LongestPath']
+            LongestPath                        = processed_graph_map_value_map['LongestPaths']
             OutputLine_group_selectorLines_Map = processed_graph_map_value_map['OutputLine_group_selectorLines_Map']
             
             DesignIdToWordLineInputMap, (ColStart, ColEnd) = self.ProgramCrossbar(Crossbar_design, Selector_Lines_Map, DesignIdItemToWordLineInputMap)
@@ -733,31 +733,39 @@ class PATH_Design_Analog_Verification:
         return crossbar
 
     def CreateCrossbarDesignFromDesign(self, crossbar_size, Crossbar_design, EnabledSelectorLines):
-        crossbar = np.full(crossbar_size, 0)  # Fill with default value 0 (inactive)
+        crossbar = np.array(Crossbar_design, dtype=np.uint8)  # Efficient copy with correct type
     
-        # Copy the input Crossbar_design into crossbar
-        for row_i in range(len(Crossbar_design)):
-            for col_j in range(len(Crossbar_design[0])):
-                crossbar[row_i][col_j] = Crossbar_design[row_i][col_j]
+        # Resize or pad if Crossbar_design is smaller than crossbar_size
+        if crossbar.shape != crossbar_size:
+            full_crossbar = np.zeros(crossbar_size, dtype=np.uint8)
+            full_crossbar[:crossbar.shape[0], :crossbar.shape[1]] = crossbar
+            crossbar = full_crossbar
     
-        # Disable columns not in EnabledSelectorLines
-        for col_j in range(crossbar_size[1]):  # Loop over columns
-            if col_j not in EnabledSelectorLines:
-                crossbar[:, col_j] = 2  # Set the entire column to 2 (disabled)
+        # Set entire columns to 2 (disabled) where selector is not enabled
+        all_columns = np.arange(crossbar.shape[1])
+        disabled_columns = np.setdiff1d(all_columns, EnabledSelectorLines)
+        crossbar[:, disabled_columns] = 2
     
         return crossbar
 
     
-    def ModifyCrossbarforZeroCurrent(self, crossbar, inputRow, outputCol):
+    def ModifyCrossbarforZeroCurrent(self, crossbar, inputRow, WordLineInputs_zero, outputCol):
 
         mod_crossbar = crossbar.copy()
         rows, cols = len(mod_crossbar), len(mod_crossbar[0])
         R_LRS = 1
         all_paths = []
+        
+        rows_used = set()
+        cols_used = set()
+        add_rows = 1  #make it divisible by 2
     
         def dfs(position, visited, current_path, last_type):
+            nonlocal add_rows
             row, col = position
-
+            
+            rows_used.add(row)
+            cols_used.add(col)
             # print('current_path',current_path[-1], last_type)
             # print('col',col)
     
@@ -766,10 +774,14 @@ class PATH_Design_Analog_Verification:
     
                 # Break the path in the middle
                 d = len(current_path)
-                mid_index = d // 2
-                # mid_index = d - 2
+                mid_index = (d // 2)
+                if(mid_index%2==0 and d>1):
+                    mid_index+=1
+                print('d',d)
+                print('mid_index',mid_index, current_path[mid_index-1], current_path[mid_index])
                 mid_row, mid_col = current_path[mid_index]
                 mod_crossbar[mid_row][mid_col] = 0  # Disable the path at midpoint
+                        
                 # print('mid_row, mid_col', mid_row, mid_col)
                 return
 
@@ -796,10 +808,17 @@ class PATH_Design_Analog_Verification:
         for c in range(cols):
             if mod_crossbar[inputRow][c] == R_LRS:
                 start = (inputRow, c)
-                print('Starting dfs...')
+                # print('Starting dfs...')
                 dfs(start, {start}, [start], 'w')
-    
-        return mod_crossbar
+
+        WordLineInputs = []
+        for WordLineInput in WordLineInputs_zero:
+            foundPath = self.find_path_execution_in_crossbar(mod_crossbar, [WordLineInput], outputCol)
+            if(not foundPath):
+                WordLineInputs.append(WordLineInput)
+
+        print('WordLineInputs chance',WordLineInputs)
+        return mod_crossbar, WordLineInputs
                                             
     def FindOptimalHRSvalue(self, design_ID_group, OutputLine_group_Map, wordLineInputs):
 
@@ -809,40 +828,69 @@ class PATH_Design_Analog_Verification:
         Crossbar_design                    = self.Design_Map[design_ID_group]['Crossbar_design']
         OutputLine_group_selectorLines_Map = self.Design_Map[design_ID_group]['OutputLine_group_selectorLines_Map']
         OutputLine_group_Map               = self.Design_Map[design_ID_group]['OutputLine_group_Map']
-        Selector_Lines_Map                 = self.Design_Map[design_ID_group]['Selector_Lines_Map']
+        Selector_Lines_Map                 = {label:index for index,label in enumerate(self.Design_Map[design_ID_group]['Selector_Lines_Map'])}
 
-        ############### Find minimum Ones current ####################
+        ############### Prepare for finding minimum Ones current ####################
 
-        LongestPath = self.Design_Map[design_ID_group]['LongestPath']
-        if(self.Design_Map[design_ID_group]['DesignIdItemToWordLineInputMap']=={}):
-            WordLineInput_one = 0
-        else:
-            # WordLineInput_one = min(list(self.Design_Map[design_ID_group]['DesignIdItemToWordLineInputMap'].values()))
-            WordLineInput_one = LongestPath[0][0]
+        self.CrossbarOneCache = {}
+        
+        LongestPaths = self.Design_Map[design_ID_group]['LongestPaths']
 
         crossbar_design_size=(len(Crossbar_design), len(Crossbar_design[0]))
         crossbar_size=(self.Crossbar.shape[0], self.Crossbar.shape[1])
+
+        for LongestPath in LongestPaths:
+            # Create Crossbar design from LongestPath
+            Crossbar_one = self.CreateCrossbarDesignFromLongestPath(LongestPath, 
+                                                                crossbar_design_size=crossbar_design_size,
+                                                                crossbar_size=crossbar_size)
         
-        # Create Crossbar design from LongestPath
-        Crossbar_one = self.CreateCrossbarDesignFromLongestPath(LongestPath, 
-                                                            crossbar_design_size=crossbar_design_size,
-                                                            crossbar_size=crossbar_size)
-        outputBitlineIndex_one = LongestPath[-1][1]
+            self.CrossbarOneCache[tuple(LongestPath)] = Crossbar_one
+        
+            # outputBitlineIndex_one = LongestPath[-1][1]
 
         # print('LongestPath 1',LongestPath)
         # print('foundPath 1',foundPath)
         # for row in Crossbar_one:
         #     print(row,'a')
+
+        ##################### prepare for Finding maximum Zeros current ####################
+
+        self.CrossbarZeroCache = {}
         
-        # OnesCurrent = self.find_path_current_execution_in_crossbar(design_ID_group, Crossbar, [WordLineInput], outputBitlineIndex, R_HRS=4e7)
-
-        ##################### Find maximum Zeros current ####################
-
         if(self.Design_Map[design_ID_group]['DesignIdItemToWordLineInputMap']=={}):
             WordLineInputs_zero = [0]
         else:
             WordLineInputs_zero = list(self.Design_Map[design_ID_group]['DesignIdItemToWordLineInputMap'].values())
             # WordLineInputs_zero = list(self.Design_Map[design_ID_group]['DesignIdItemToWordLineInputMap'].values())[0:1]
+        # print('WordLineInputs_zero', WordLineInputs_zero)
+        
+        for outputLabel in OutputLine_group_Map:
+
+            outputBitlineIndex_zero       = Selector_Lines_Map[outputLabel]
+            # print('outputBitlineIndex_zero', outputBitlineIndex_zero, outputLabel)
+            
+            EnabledSelectorLines = OutputLine_group_selectorLines_Map[outputLabel]
+
+            Crossbar_zero = self.CreateCrossbarDesignFromDesign(
+                                            crossbar_size,
+                                            Crossbar_design,
+                                            EnabledSelectorLines)
+
+            for WordLineInput in WordLineInputs_zero:
+                    Crossbar_zero_mod, WordLineInputs = self.ModifyCrossbarforZeroCurrent(Crossbar_zero, WordLineInput, WordLineInputs_zero, outputBitlineIndex_zero)
+
+                    foundPath = self.find_path_execution_in_crossbar(Crossbar_zero_mod, WordLineInputs, outputBitlineIndex_zero)
+
+                    # print('foundPath 0', foundPath,'============================================')
+                    if foundPath:
+                        raise RuntimeError(f"Unexpected path found for design_ID_group={design_ID_group}, "
+                                           f"outputLabel={outputLabel}, WordLineInput={WordLineInput}")
+
+                    cache_key = (design_ID_group, outputLabel, WordLineInput)
+                    self.CrossbarZeroCache[cache_key] = Crossbar_zero_mod
+
+        
         
         
         ######################## Binary Search for R_HRS ########################
@@ -850,43 +898,39 @@ class PATH_Design_Analog_Verification:
         high = 2e16
         best_R_HRS = None
         GuardBound = None
-        max_iterations = 40
+        max_iterations = 10
         iteration = 0
+
+        OnesCurrents = []
     
         while high - low > Guardbound_Threshold and iteration < max_iterations:
             mid = (low + high) // 2
             R_HRS = mid
-            OnesCurrent = self.find_path_current_execution_in_crossbar(
-                design_ID_group, Crossbar_one, [WordLineInput_one], outputBitlineIndex_one, R_HRS=R_HRS
-            )
+
+            for LongestPath in LongestPaths:
+                WordLineInput_one = LongestPath[0][0]
+                
+                Crossbar_one = self.CrossbarOneCache[tuple(LongestPath)]
+                
+                outputBitlineIndex_one = LongestPath[-1][1]
+                
+                OnesCurrent = self.find_path_current_execution_in_crossbar(
+                    design_ID_group, Crossbar_one, [WordLineInput_one], outputBitlineIndex_one, R_HRS=R_HRS
+                )
+                
+                OnesCurrents.append(OnesCurrent)
+
+            OnesCurrent = min(OnesCurrents)
             
             # ZerosCurrent calculation 
             ZerosCurrent_lst = []
             for outputLabel in OutputLine_group_Map:
-                # outputBitlineIndex_zero       = OutputLine_group_Map[outputLabel] wrong
-                outputBitlineIndex_zero       = Selector_Lines_Map.index(outputLabel)
-                # print('outputBitlineIndex_zero',outputBitlineIndex_zero)
-                
-                EnabledSelectorLines = OutputLine_group_selectorLines_Map[outputLabel]
-                
-                Crossbar_zero = self.CreateCrossbarDesignFromDesign(
-                                            crossbar_size,
-                                            Crossbar_design,
-                                            EnabledSelectorLines)
-
-                print('WordLineInputs_zero', WordLineInputs_zero)
-                print('outputBitlineIndex_zero', outputBitlineIndex_zero)
+                outputBitlineIndex_zero       = Selector_Lines_Map[outputLabel]
                 for WordLineInput in WordLineInputs_zero:
-                    Crossbar_zero_mod = self.ModifyCrossbarforZeroCurrent(Crossbar_zero, WordLineInput, outputBitlineIndex_zero)
-
-                    foundPath = self.find_path_execution_in_crossbar(Crossbar_zero_mod, [WordLineInput], outputBitlineIndex_zero)
-
-                    print('foundPath 0', foundPath,'============================================')
-                    
+                    Crossbar_zero_mod = self.CrossbarZeroCache.get((design_ID_group, outputLabel, WordLineInput))
                     ZerosCurrent = self.find_path_current_execution_in_crossbar(
                         design_ID_group, Crossbar_zero_mod, [WordLineInput], outputBitlineIndex_zero, R_HRS=R_HRS
                     )
-                    
                     ZerosCurrent_lst.append(ZerosCurrent)
 
             ZerosCurrent = max(ZerosCurrent_lst)

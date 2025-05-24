@@ -1134,21 +1134,24 @@ class PATH:
                 
                 self.Processed_group_graphs_Map[design_ID_group]['Crossbar_design'][row_i][col_j] = 1
 
-            self.Processed_group_graphs_Map[design_ID_group]['LongestPath'] = []
+            self.Processed_group_graphs_Map[design_ID_group]['LongestPaths'] = []
     
-            longPath = self.LongestpathInTreeAndCrossbar(processed_group_graph)
+            longPaths = self.LongestpathInTreeAndCrossbar(processed_group_graph)
 
-            CrossbarLongPath = []
-            for j in range(len(longPath)-1):
-                if(j%2==0):
-                    node1, node2 = longPath[j],longPath[j+1]
-                else:
-                    node2, node1 = longPath[j],longPath[j+1]
-                row_index, col_index = rowMap[node1], colMap[node2]
-                
-                CrossbarLongPath.append((row_index, col_index))
+            CrossbarLongPaths = []
+            for longPath in longPaths:
+                CrossbarLongPath = []
+                for j in range(len(longPath)-1):
+                    if(j%2==0):
+                        node1, node2 = longPath[j],longPath[j+1]
+                    else:
+                        node2, node1 = longPath[j],longPath[j+1]
+                    row_index, col_index = rowMap[node1], colMap[node2]
                     
-            self.Processed_group_graphs_Map[design_ID_group]['LongestPath']  = CrossbarLongPath
+                    CrossbarLongPath.append((row_index, col_index))
+                CrossbarLongPaths.append(CrossbarLongPath)
+                    
+            self.Processed_group_graphs_Map[design_ID_group]['LongestPaths']  = CrossbarLongPaths
             
         self.GraphProcessPhase = "5. Crossbar Realization"
 
@@ -1169,9 +1172,6 @@ class PATH:
             print('----------------------------------------------')
 
     def LongestpathInTreeAndCrossbar(self, graph):
-        
-        start_node = [n for n, deg in graph.in_degree() if deg == 0][0]
-        # print("Start nodes (in-degree = 0):", graph.nodes[start_node])
 
         def dag_longest_path_lengths(G, start_node):
             """
@@ -1211,10 +1211,19 @@ class PATH:
             path.reverse()  # because we built it from farthest_node back to start_node
         
             return distances, path, longest_distance
-            
-        
-        # 2) Compute the distance from start_node to all other nodes
-        # Compute distances and retrieve ONE longest path
-        distance_dict, single_longest_path, longest_distance = dag_longest_path_lengths(graph, start_node)
 
-        return single_longest_path
+        # Get all the start nodes
+        start_nodes = {n for n, deg in graph.in_degree() if deg == 0}
+
+        for node in graph.nodes:
+            if(len(graph.nodes[node]['in_split_id'])>0):
+                start_nodes.add(node)
+
+        longest_paths = []
+        for start_node in start_nodes:
+            # 2) Compute the distance from start_node to all other nodes
+            # Compute distances and retrieve ONE longest path
+            distance_dict, single_longest_path, longest_distance = dag_longest_path_lengths(graph, start_node)
+            longest_paths.append(single_longest_path)
+
+        return longest_paths

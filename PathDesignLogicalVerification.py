@@ -276,7 +276,7 @@ class PATH_Design_Logic_Verification:
             Selector_Lines_Map                 = processed_graph_map_value_map['Selector_Lines_Map']
             OutputLine_group_Map               = processed_graph_map_value_map['OutputLine_group_Map']
             DesignIdItemToWordLineInputMap     = processed_graph_map_value_map['DesignIdItemToWordLineInputMap']
-            LongestPath                        = processed_graph_map_value_map['LongestPath']
+            LongestPath                        = processed_graph_map_value_map['LongestPaths']
             OutputLine_group_selectorLines_Map = processed_graph_map_value_map['OutputLine_group_selectorLines_Map']
             
             DesignIdToWordLineInputMap, (ColStart, ColEnd) = self.ProgramCrossbar(Crossbar_design, Selector_Lines_Map, DesignIdItemToWordLineInputMap)

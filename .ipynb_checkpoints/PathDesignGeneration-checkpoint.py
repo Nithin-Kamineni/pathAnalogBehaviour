@@ -549,8 +549,8 @@ class PATH:
 
         
 
-        print('roots',roots)
-        print('top_graph in func', [top_graph.nodes[n]['literal'] for n in top_graph.nodes])
+        # print('roots',roots)
+        # print('top_graph in func', [top_graph.nodes[n]['literal'] for n in top_graph.nodes])
 
         while queue:
             next_layer = deque()
@@ -582,8 +582,8 @@ class PATH:
             # Move to next BFS layer
             queue = next_layer
 
-        print('pred split_nodes in func',[top_graph.nodes[n]['literal'] for n in pred_split_nodes_map])
-        print('succ split_nodes in func',[top_graph.nodes[n]['literal'] for n in succ_split_nodes_map])
+        # print('pred split_nodes in func',[top_graph.nodes[n]['literal'] for n in pred_split_nodes_map])
+        # print('succ split_nodes in func',[top_graph.nodes[n]['literal'] for n in succ_split_nodes_map])
         return pred_split_nodes_map, succ_split_nodes_map
 
     def find_output_label_nodes(self, top_graph):
@@ -634,7 +634,7 @@ class PATH:
         """
 
         #Add U1 (Word Line) output node
-        literal = max([int(graph.nodes[node]['literal']) for node in graph if graph.nodes[node]['BipartitePart'] == 'U1'])+1
+        literal = max([int(graph.nodes[node]['literal'].split('(')[0]) for node in graph if graph.nodes[node]['BipartitePart'] == 'U1'])+1
         id_str = f"{literal}_ID"
         U1_node_attributes = {'ID': id_str, 'literal': str(literal), 'ExpressionRoot': None, 'BipartitePart':'U1', 'split_id':None, 'in_split_id':set(), 'out_split_id':None}
         graph.add_node(id_str, **U1_node_attributes)
@@ -762,7 +762,8 @@ class PATH:
         # Step 6.4: Add Successors of U2 nodes (adding U1 nodes) to inverse_map_graph_chunk_2 dictionary //good
         inverse_map_graph_chunk_2 = {}
         for u2_node in u2_nodes_set:
-            inverse_map_graph_chunk_2[u2_node] = [u1_node for u1_node in self.Graph.successors(u2_node)]
+            # inverse_map_graph_chunk_2[u2_node] = [u1_node for u1_node in self.Graph.successors(u2_node)]
+            inverse_map_graph_chunk_2[u2_node] = succ_split_nodes[u2_node]
 
         # print("Step 6:", inverse_map_graph_chunk_2, inverse_map_graph_chunk_1)
 
@@ -812,8 +813,9 @@ class PATH:
                 self.Graph.nodes[u2_node]["split_id"] = str(uuid.uuid4()) # Generate a unique split ID
             split_id = self.Graph.nodes[u2_node]["split_id"]
             
-            u1_succ_nodes = succ_split_nodes[u2_node]
-            for u1_node in u1_succ_nodes:
+            u1_nodes = succ_split_nodes[u2_node]
+            # print('u2_node',u2_node,'u1_nodes',u1_nodes)
+            for u1_node in u1_nodes:
                 if u1_node not in output_node_to_literal_map:
                     output_node_to_literal_map[u1_node] = []
                 output_node_to_literal_map[u1_node].append({'split_id':split_id, 'literal':literal, 'added_output_node_id':added_output_node_id, 'endingNodeLabel':endingNodeLabel})
@@ -892,6 +894,7 @@ class PATH:
         # Step 10: Update the split_ids based on the bus connections between top graph and splt_graph
         for u2_parent, u1_children in inverse_map_graph_chunk_2.items():
             # Step 10.1: Assign split_id's based on the output_node_to_literal_map (Step 8)
+            # print('u2_parent',u2_parent, 'u1_children',u1_children)
             for u1_child in u1_children:
                 for u1_map_item in output_node_to_literal_map[u1_child]:
                     split_id, literal, added_output_node_id, endingNodeLabel = u1_map_item['split_id'], u1_map_item['literal'], u1_map_item['added_output_node_id'], u1_map_item['endingNodeLabel']
@@ -942,12 +945,12 @@ class PATH:
             unprocessed_graph = unprocessed_graphs.pop(0)
             measured_graph = self.getDistanceFromRoot(unprocessed_graph) #attribute to each node has ditance from root to each node
 
-            print('measured_graph as ds',{measured_graph.nodes[n]['literal']:measured_graph.nodes[n]['distance'] for n in measured_graph if measured_graph.nodes[n]['BipartitePart']=="U1"})
+            # print('measured_graph as ds',{measured_graph.nodes[n]['literal']:measured_graph.nodes[n]['distance'] for n in measured_graph if measured_graph.nodes[n]['BipartitePart']=="U1"})
             #split_graphs has wordLineID in root node or start
             #processed_graph has wprdLineID in leaf or end
             processed_graph, split_graphs, OutputLine_Map = self.split_graphs_with_height(measured_graph)
 
-            print('root node ids of processed_graph1', [n for n in processed_graph.nodes if processed_graph.in_degree(n) == 0 and processed_graph.nodes[n].get("BipartitePart") == "U1"])
+            # print('root node ids of processed_graph1', [n for n in processed_graph.nodes if processed_graph.in_degree(n) == 0 and processed_graph.nodes[n].get("BipartitePart") == "U1"])
             
             # split-id nodes
             in_split_ids = set()
@@ -955,7 +958,7 @@ class PATH:
                 for split_id in processed_graph.nodes[node]['in_split_id']:
                     in_split_ids.add(split_id)
             
-            print('in_split_ids',in_split_ids)
+            # print('in_split_ids',in_split_ids)
 
             # # Leaf nodes: out-degree == 0
             # leaf_nodes = [n for n, d in processed_graph.out_degree() if d == 0]
@@ -1077,8 +1080,8 @@ class PATH:
                     colMap[processed_group_graph.nodes[node]['ID']] = bit_line_counter
                     bit_line_counter += 1
                 if(processed_group_graph.nodes[node]['BipartitePart']=='U1'):
-                    rowMap[processed_group_graph.nodes[node]['ID']] = int(processed_group_graph.nodes[node]['literal'])
-                    word_lines.append(int(processed_group_graph.nodes[node]['literal']))
+                    rowMap[processed_group_graph.nodes[node]['ID']] = int(processed_group_graph.nodes[node]['literal'].split('(')[0])
+                    word_lines.append(int(processed_group_graph.nodes[node]['literal'].split('(')[0]))
 
             word_lines_count = len(word_lines)
             word_lines.sort()
@@ -1111,16 +1114,24 @@ class PATH:
             #Initialising crossbar design
             self.Processed_group_graphs_Map[design_ID_group]['Crossbar_design'] = [[0 for _ in range(bit_line_counter)] for _ in range(word_lines_count)]
 
-            self.Processed_group_graphs_Map[design_ID_group]['DesignIdItemToWordLineInputMap'] = {} #{design_id:wordlinenum}
+            self.Processed_group_graphs_Map[design_ID_group]['DesignIdItemToWordLineInputMap'] = {} #{design_id_item:wordlinenum}
 
             input_split_IDs, _ = design_ID_group
 
             for input_split_id in input_split_IDs:
                 input_node_id_templst = [node for node in processed_group_graph.nodes if input_split_id in processed_group_graph.nodes[node]["in_split_id"]]
-                if(len(input_node_id_templst)!=1):
-                    continue
-                input_node_id = input_node_id_templst[0]
-                self.Processed_group_graphs_Map[design_ID_group]['DesignIdItemToWordLineInputMap'][input_split_id] = rowMap[input_node_id]
+                # if(len(input_node_id_templst)!=1):
+                #     print('not thought', input_node_id_templst)
+                #     continue
+                # input_node_id = input_node_id_templst[0]
+                # if(len(input_node_id_templst)>1):
+
+                if(input_split_id not in self.Processed_group_graphs_Map[design_ID_group]['DesignIdItemToWordLineInputMap']):
+                    self.Processed_group_graphs_Map[design_ID_group]['DesignIdItemToWordLineInputMap'][input_split_id] = []
+                    
+                for input_node_id in input_node_id_templst:            
+                    self.Processed_group_graphs_Map[design_ID_group]['DesignIdItemToWordLineInputMap'][input_split_id].append(rowMap[input_node_id])
+                    # break
                 
             
             for i,(u, v, data) in enumerate(processed_group_graph.edges(data=True)):

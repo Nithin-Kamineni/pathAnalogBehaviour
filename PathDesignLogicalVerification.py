@@ -81,8 +81,15 @@ class Bus:
                 return input_assignment.get(literal) == 1
     
         # Start from all nodes with in-degree 0
-        start_nodes = [n for n in graph.nodes if graph.in_degree(n) == 0]
-        visited_outputs = {graph.nodes[n].get('ExpressionRoot'):0 for n in graph.nodes if graph.nodes[n].get('ExpressionRoot') is not None}
+        start_nodes = [n 
+                       for n in graph.nodes 
+                       if graph.in_degree(n) == 0
+                      ]
+        visited_outputs = {graph.nodes[n].get('ExpressionRoot'):0 
+                           for n in graph.nodes 
+                           if graph.nodes[n].get('ExpressionRoot') is not None}
+        output_paths = {}  # NEW: tracks the path that triggers each output
+        
         if(singleDesignCheck):
             split_outputs_map = {}
             for n in graph.nodes:
@@ -106,11 +113,13 @@ class Bus:
     
                 if expression_root is not None:
                     visited_outputs[expression_root] = 1
+                    output_paths[expression_root] = path
                     continue
                 if(singleDesignCheck):
                     if node_data.get('split_id') is not None and node_data.get('split_id').split()[0] == 'leaf':
                         output_node_label = split_outputs_map[node_data.get('split_id').split()[1]]
                         visited_outputs[output_node_label] = 1
+                        output_paths[output_label] = path
     
                 for succ in graph.successors(current_node):
                     succ_data = graph.nodes[succ]
@@ -125,7 +134,9 @@ class Bus:
                         stack.append((succ, path + [succ]))
     
         # print("Computed Outputs:", visited_outputs)
-        return visited_outputs
+        return visited_outputs, output_paths
+
+    # DebugPathInGodenModel(self,)
 
     def RunRandomTestCases(self, num_tests=10, RunAllTests=False):
         
@@ -151,7 +162,7 @@ class Bus:
             # input_assignment = {var: random.randint(0, 1) for var in self.input_vars}
             # if(i+1 not in [8, 16, 556, 557, 558, 684, 686, 812, 814, 940, 942, 1068, 1070, 1196, 1198, 1324, 1326, 1452, 1454]):
             #     continue
-            golden_output = self.GoldenModel(input_assignment, self.MainBDD_For_GoldenModel)
+            golden_output,_ = self.GoldenModel(input_assignment, self.MainBDD_For_GoldenModel)
 
             # Run model and golden model
             model_output = self.ExecuteDesignsInTopologicalOrder(input_assignment)
@@ -197,6 +208,10 @@ class Bus:
         design_ID_item_activation_set = set()
         
         for design_ID_group in self.Topological_order:
+            # print('design_ID_group',design_ID_group)
+            # print('design_ID_item_activation_set',design_ID_item_activation_set)
+            # print('-----------------------------------')
+            # print()
             crossbar_design   = self.crossbar_designs[design_ID_group]["crossbar_design_instance"]
             OutputLine_group_Map    = self.crossbar_designs[design_ID_group]["OutputLine_group_Map"]
             DesignIdItemToWordLineInputMap = self.crossbar_designs[design_ID_group]["DesignIdItemToWordLineInputMap"]
@@ -206,28 +221,34 @@ class Bus:
 
             # for design_ID_group inputs that are starting designs having initial input current
             if(None in DesignIdItemToWordLineInputMap):
-                wordLineInputs.append(DesignIdItemToWordLineInputMap[None])
+                for wordLineInput in DesignIdItemToWordLineInputMap[None]:
+                    wordLineInputs.append(wordLineInput)
                 
             design_ID,_ = design_ID_group
             # print()
+            design_ID_item_lst = []
             # print('design_ID',design_ID)
             for design_ID_item in design_ID:
                 if(design_ID_item not in DesignIdItemToWordLineInputMap):  #make sure design_ID_item is in the following group
                     continue
                 if(design_ID_item is None or design_ID_item in design_ID_item_activation_set):  #check if following word line needs to be activated
-                    wordLineInputs.append(DesignIdItemToWordLineInputMap[design_ID_item])  # Add wordline inputs of following design_ID
+                    for wordLineInput in DesignIdItemToWordLineInputMap[design_ID_item]:
+                        # print('wordLineInput_lst',wordLineInput_lst)
+                        # for wordLineInput in wordLineInput_lst:
+                            wordLineInputs.append(wordLineInput)  # Add mutiple wordline inputs of following design_ID
+                    design_ID_item_lst.append(design_ID_item)
             # print('wordLineInputs',wordLineInputs)
 
             if(wordLineInputs==[]):
                 continue
             
             selector_lines = crossbar_design.ActivateSelectorLines(input_assignment)
+
+            # print('wordLineInputs',wordLineInputs)
             
             design_ID_group_output = crossbar_design.Execute(design_ID_group, wordLineInputs, OutputLine_group_Map, selector_lines)
 
-            #debug
-            # print('design_ID_group_output', design_ID_group_output)
-            # print()
+            
             
             for outputLabel in design_ID_group_output:
                 if(len(outputLabel)>10):   #split_id_item output
@@ -235,6 +256,22 @@ class Bus:
                         design_ID_item_activation_set.add(outputLabel)
                 else:
                     Output[outputLabel] = design_ID_group_output[outputLabel]
+
+            # print('design_ID_group',design_ID_group)
+            # print()
+            # print('wordLineInputs',wordLineInputs)
+            # print()
+            # #debug
+            # print('design_ID_group_output', design_ID_group_output)
+            # print()
+            # print('DesignIdItemToWordLineInputMap',DesignIdItemToWordLineInputMap)
+            # print('len(DesignIdItemToWordLineInputMap)',len(DesignIdItemToWordLineInputMap))
+            # print()
+            # print('design_ID_item_lst',design_ID_item_lst)
+            # print()
+            # print('design_ID_item_activation_set',design_ID_item_activation_set)
+            # print('-----------------------------------')
+            # print()
         
         return Output
             
@@ -311,12 +348,19 @@ class PATH_Design_Logic_Verification:
         self.Crossbar[row_start:row_end, col_start:col_end] = Crossbar_design
 
         # Offset input row mapping
-        DesignIdToWordLineInputMap = {
-            split_id: row + row_start
-            for split_id, row in DesignId_To_WordLineNumber_Map.items()
-        }
+        # DesignIdToWordLineInputMap = {
+        #     split_id: row + row_start
+        #     for split_id, row in DesignId_To_WordLineNumber_Map.items()
+        # }
+        DesignIdToWordLineInputMap = {}
+        for split_id, rows in DesignId_To_WordLineNumber_Map.items():
+            if(split_id not in DesignIdToWordLineInputMap):
+                DesignIdToWordLineInputMap[split_id]= []
+            for j, row in enumerate(rows):
+                DesignIdToWordLineInputMap[split_id].append(row + row_start)
+        
         if(DesignIdToWordLineInputMap == {}):
-            DesignIdToWordLineInputMap[None] = row_start
+            DesignIdToWordLineInputMap[None] = [row_start]
         
         # Update Row/Col offsets
         self.RowOffSet = row_end
@@ -351,15 +395,16 @@ class PATH_Design_Logic_Verification:
         return Crossbar
 
     def find_path_execution_in_crossbar(self, Crossbar, wordLineInputs, outputBitlineIndex):
+
+        R_LRS = 1
+
+        # Stack for depth-first traversal
+        Stack = []
+
         # Custom function to emulate an ordered set using a list
         def add_to_ordered_set(ordered_set, element):
             if element not in ordered_set:
                 ordered_set.append(element)
-
-        R_LRS = 1
-        
-        # Stack for depth-first traversal
-        Stack = []
         
         # Finding paths
         for wordLineInput in wordLineInputs:

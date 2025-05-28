@@ -1,0 +1,108 @@
+.model bw
+.inputs x3 x0 x4 x1 x2
+.outputs f20 f6 f10 f13 f1 f24 f12 f26 f17 f7 f21 f14 f9 f0 f16 f5 f22 f23 f25 f2 f27 f3 f11 f8 f4 f19 f18 f15
+.order x1 x3 x4 x2 x0
+.bdd
+4d1e 4d1c 4d1d x1 f17
+4d48 4d46 4d47 x1 f23
+4d15 4cef 4d14 x1 f16
+4ce7 4d02 4cef x1 f12
+4c80 4c7e 4c92 x1 f2
+4ccd 4d19 4ccc x1 f8
+4c9f 4c98 4c9b x1 f4
+4d11 4d0b 4d10 x1 f15
+4d31 4c8f 4d30 x1 f19
+4d28 4c38 4d27 x1 f18
+4cb6 4cb3 4cb5 x1 f6
+4c42 4cef 4c38 x1 f1
+4d00 4cfe 4cff x1 f14
+4d4e 4cef 4d4d x1 f24
+4d57 4d55 4d56 x1 f25
+4cdc 4cda 4cdb x1 f10
+4ccf 4cef 4d02 x1 f9
+4cc5 4cbf 4cc1 x1 f7
+4d37 4cff 4c38 x1 f21
+4d66 4c38 4cda x1 f27
+4cfa 4cf5 4cf9 x1 f13
+4d64 4d62 4d63 x1 f26
+4ca5 4cef 4ca4 x1 f5
+4c7a 4c8c 4c86 x1 f0
+4ce3 4c38 4ce2 x1 f11
+4d3e 4d3b 4d3d x1 f22
+4d46 4cf0 4c38 x3
+4ce2 4ce1 4cc0 x3
+4cb3 4c99 4cb2 x3
+4d10 4d0d 4c38 x3
+4ccc 4d19 4cc9 x3
+4d14 4c65 4cf1 x3
+4d30 4d19 4d2f x3
+4ca4 4d02 4ca3 x3
+4c86 4d1a 4c76 x3
+4d55 4cf8 4cc9 x3
+4cf5 4d5b 4cf0 x3
+4d35 4cc9 4d34 x3 f20
+4d3b 4d0a 4d34 x3
+4d3d 4d0d 4d34 x3
+4c7e 4c4f 4c4b x3
+4c92 4c4f 4cf2 x3
+4c9b 4c99 4c9a x3
+4d0b 4d0a 4c64 x3
+4cef 4d02 4cf1 x3
+4c8c 4c81 4ca6 x3
+4cb5 4cb2 4cb4 x3
+4cda 4c38 4c4f x3
+4cfe 4cb4 4c81 x3
+4d1c 4cf0 4ce1 x3
+4d1d 4ce1 4cf2 x3
+4d56 4cc9 4c81 x3
+4d62 4c65 4d61 x3
+4cbf 4c81 4cbc x3
+4c8f 4d19 4c83 x3 f3
+4cdb 4c4f 4c38 x3
+4c98 4c4b 4c38 x3
+4d47 4c83 4d0a x3
+4d63 4d61 4c99 x3
+4d27 4c4f 4d24 x3
+4cc1 4cc0 4cbc x3
+4d4d 4d4c 4cf1 x3
+4cf9 4cb4 4cf8 x3
+4cff 4c38 4d1a x3
+4d24 4cf1 4d3f x4
+4c99 4c65 4d3f x4
+4c83 4c64 4d3f x4
+4cb2 4d5b 4d3f x4
+4ca3 4d3f 4cf1 x4
+4d02 4c65 4cf1 x4
+4ca6 4cf1 4d5d x4
+4d2f 4c64 4cf1 x4
+4cc9 4c65 4d5d x4
+4d0a 4c64 4d5d x4
+4cf8 4d5b 4d5d x4
+4c76 4d3f 4c38 x4
+4c9a 4c64 4c38 x4
+4cb4 4d5b 4c38 x4
+4cbc 4c38 4c5d x4
+4d19 4d5b 4c65 x4
+4c4f 4c38 4c64 x4
+4c4b 4c38 4d5b x4
+4d4c 4c65 4c5d x4
+4d0d 4c64 4c5d x4
+4c81 4c38 4d3f x4
+4d34 4d3f 4c64 x4
+4cc0 4c38 4cf1 x4
+4ce1 4c65 4c64 x4
+4cf0 4d5b 4c64 x4
+4d1a 4c38 4d5d x4
+4d61 4c65 4d5b x4
+4cf2 4c64 4d5b x4
+4c65 4c38 4c37 x2
+4d3f 4c5d 4d04 x2
+4d5b 4c38 4d04 x2
+4c64 4c38 4c5d x2
+4cf1 4c5d 4c37 x2
+4d5d 4c5d 4c38 x2
+4c5d 4c38 4c37 x0
+4d04 4c37 4c38 x0
+4c37 -1 -1 1
+4c38 -1 -1 0
+.end

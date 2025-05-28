@@ -1,0 +1,16 @@
+.model c17
+.inputs 1GAT(0) 6GAT(3) 2GAT(1) 7GAT(4) 3GAT(2)
+.outputs 
+.order 7GAT(4) 1GAT(0) 3GAT(2) 6GAT(3) 2GAT(1)
+.bdd
+54 53 4d 7GAT(4)
+4e 46 4d 1GAT(0)
+53 52 38 3GAT(2)
+46 38 43 3GAT(2)
+4d 41 43 3GAT(2)
+52 39 38 6GAT(3)
+41 39 43 6GAT(3)
+43 38 39 2GAT(1)
+38 -1 -1 1
+39 -1 -1 0
+.end

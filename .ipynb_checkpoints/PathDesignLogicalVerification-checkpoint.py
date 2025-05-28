@@ -46,7 +46,7 @@ class Bus:
                          and self.MainBDD_For_GoldenModel.nodes[node]['ExpressionRoot'] is not None]
         
         return {nodesLiteral:0 for nodesLiteral in nodesLiterals}
-
+    
     def getInputVaribles(self):
         nodesLiterals = [self.MainBDD_For_GoldenModel.nodes[node]['literal'] for node in self.MainBDD_For_GoldenModel.nodes if self.MainBDD_For_GoldenModel.nodes[node]['BipartitePart'] == 'U2']
         input_vars = set()
@@ -57,19 +57,18 @@ class Bus:
         input_vars = list(input_vars)
         return input_vars
         
-    def connect(self, crossbar_design_instance, design_ID, DesignIdItemToWordLineInputMap, OutputLine_group_Map):
+    def connect(self, crossbar_design_instance, design_ID, DesignIdItemToWordLineInputMap, OutputLine_group_Map, processed_group_graph):
         self.crossbar_designs[design_ID] = {
             "crossbar_design_instance":crossbar_design_instance, 
             "DesignIdItemToWordLineInputMap":DesignIdItemToWordLineInputMap, 
-            "OutputLine_group_Map":OutputLine_group_Map
+            "OutputLine_group_Map":OutputLine_group_Map,
+            "processed_group_graph":processed_group_graph
         }
 
     def GoldenModel(self, input_assignment, graph=None):
 
         singleDesignCheck = True
-        if(graph is None):
-            singleDesignCheck = False
-            graph = self.MainBDD_For_GoldenModel
+        graph = self.MainBDD_For_GoldenModel
     
         # Helper: decide if a U2 node can be passed
         def is_passable_u2(node):
@@ -88,18 +87,11 @@ class Bus:
         visited_outputs = {graph.nodes[n].get('ExpressionRoot'):0 
                            for n in graph.nodes 
                            if graph.nodes[n].get('ExpressionRoot') is not None}
-        output_paths = {}  # NEW: tracks the path that triggers each output
-        
-        if(singleDesignCheck):
-            split_outputs_map = {}
-            for n in graph.nodes:
-                if graph.nodes[n].get('split_id') is not None and graph.nodes[n].get('split_id').split()[0]=='leaf':
-                    successors = list(graph.successors(n))
 
-                    for successor in successors:
-                        if('O' in graph.nodes[successor].get('literal')):
-                            split_outputs_map[graph.nodes[n].get('split_id').split()[1]] = graph.nodes[successor].get('literal')
-                            visited_outputs[graph.nodes[successor].get('literal')] = 0
+        # and graph.out_degree(n)==0 need to check this
+        # print('len(visited_outputs)', len(visited_outputs))
+        
+        output_paths = {}  # NEW: tracks the path that triggers each output
     
         for start_node in start_nodes:
             stack = [(start_node, [start_node])]
@@ -107,19 +99,14 @@ class Bus:
             while stack:
                 current_node, path = stack.pop()
                 node_data = graph.nodes[current_node]
-                bipartite_type = node_data.get('BipartitePart')
-                literal = node_data.get('literal', '')
+                # bipartite_type = node_data.get('BipartitePart')
+                # literal = node_data.get('literal', '')
                 expression_root = node_data.get('ExpressionRoot')
     
                 if expression_root is not None:
                     visited_outputs[expression_root] = 1
                     output_paths[expression_root] = path
-                    continue
-                if(singleDesignCheck):
-                    if node_data.get('split_id') is not None and node_data.get('split_id').split()[0] == 'leaf':
-                        output_node_label = split_outputs_map[node_data.get('split_id').split()[1]]
-                        visited_outputs[output_node_label] = 1
-                        output_paths[output_label] = path
+                    # continue
     
                 for succ in graph.successors(current_node):
                     succ_data = graph.nodes[succ]
@@ -200,7 +187,7 @@ class Bus:
         print(f"Number of test cases passed out of is {passed_test_case_count}/{i+1}")
     
         return test_results
-    
+        
     def ExecuteDesignsInTopologicalOrder(self, input_assignment):
 
         Output = self.Output.copy()
@@ -210,8 +197,6 @@ class Bus:
         for design_ID_group in self.Topological_order:
             # print('design_ID_group',design_ID_group)
             # print('design_ID_item_activation_set',design_ID_item_activation_set)
-            # print('-----------------------------------')
-            # print()
             crossbar_design   = self.crossbar_designs[design_ID_group]["crossbar_design_instance"]
             OutputLine_group_Map    = self.crossbar_designs[design_ID_group]["OutputLine_group_Map"]
             DesignIdItemToWordLineInputMap = self.crossbar_designs[design_ID_group]["DesignIdItemToWordLineInputMap"]
@@ -248,7 +233,7 @@ class Bus:
             
             design_ID_group_output = crossbar_design.Execute(design_ID_group, wordLineInputs, OutputLine_group_Map, selector_lines)
 
-            
+            # print('design_ID_group_output',design_ID_group_output)
             
             for outputLabel in design_ID_group_output:
                 if(len(outputLabel)>10):   #split_id_item output
@@ -256,25 +241,116 @@ class Bus:
                         design_ID_item_activation_set.add(outputLabel)
                 else:
                     Output[outputLabel] = design_ID_group_output[outputLabel]
-
-            # print('design_ID_group',design_ID_group)
-            # print()
-            # print('wordLineInputs',wordLineInputs)
-            # print()
-            # #debug
-            # print('design_ID_group_output', design_ID_group_output)
-            # print()
-            # print('DesignIdItemToWordLineInputMap',DesignIdItemToWordLineInputMap)
-            # print('len(DesignIdItemToWordLineInputMap)',len(DesignIdItemToWordLineInputMap))
-            # print()
-            # print('design_ID_item_lst',design_ID_item_lst)
-            # print()
-            # print('design_ID_item_activation_set',design_ID_item_activation_set)
-            # print('-----------------------------------')
-            # print()
+                    
+            # break
         
         return Output
+
+    def RunTestCasesOnDesignTrees(self, input_assignment):
+        Output = self.Output.copy()
+        
+        splitID_activation_set = set()
+
+        results = {}
+        
+        for design_ID_group in self.Topological_order:
+            OutputLine_group_Map    = self.crossbar_designs[design_ID_group]["OutputLine_group_Map"]
+            processed_group_graph = self.crossbar_designs[design_ID_group]["processed_group_graph"]
+
+            wordLineInputs_Split_nodeID = []
+
+            design_ID,_ = design_ID_group
+
+            intersectionToNodeId = {}
+            # for design_ID_group inputs that are starting designs having initial input current
+            if(design_ID==frozenset({})):
+                root_node = [node for node in processed_group_graph.nodes 
+                              if processed_group_graph.in_degree(node) == 0][0]
+                wordLineInputs_Split_nodeID.append(root_node)
+                intersection = set()
+            else:
+                for node in processed_group_graph:
+                    intersection = splitID_activation_set & processed_group_graph.nodes[node]['in_split_id']
+                    if len(intersection):  #finding intersection (group_id_item)
+                        wordLineInputs_Split_nodeID.append(node)
+                        intersectionToNodeId[frozenset(intersection)]=node
+                        
+            if(wordLineInputs_Split_nodeID==[]):
+                continue
+
+            # print('wordLineInputs_Split_nodeID',wordLineInputs_Split_nodeID)
             
+            #send split_id and main labels only
+            design_ID_group_output, paths_map = self.ExecuteOnDesignTree(processed_group_graph, wordLineInputs_Split_nodeID, input_assignment, OutputLine_group_Map)
+
+            # print(design_ID_group_output)
+            # print()
+            
+            for outputLabel in design_ID_group_output:
+                if(len(outputLabel)>10):   #split_id_item output
+                    if(design_ID_group_output[outputLabel]):            
+                        splitID_activation_set.add(outputLabel)
+                else:
+                    Output[outputLabel] = design_ID_group_output[outputLabel]
+            # break
+
+            results[design_ID_group] = (design_ID_group_output, paths_map, intersectionToNodeId)
+        
+        return Output, results
+
+    def ExecuteOnDesignTree(self, processed_group_graph, wordLineInputs_Split_nodeID, input_assignment, OutputLine_group_Map):
+
+        # Helper: decide if a U2 node can be passed
+        def is_passable_u2(node):
+            literal = processed_group_graph.nodes[node].get('literal', '')
+            if literal.startswith('~') or literal.startswith('-'):
+                var = literal[1:]
+                return input_assignment.get(var) == 0
+            else:
+                return input_assignment.get(literal) == 1
+
+        # Prepare visited outputs and output path tracking
+        visited_outputs = {}
+        for n in processed_group_graph.nodes:
+            if(processed_group_graph.nodes[n].get('ExpressionRoot') is not None and processed_group_graph.out_degree(n)==0):
+                visited_outputs[processed_group_graph.nodes[n]['ExpressionRoot']] = 0
+
+            if(processed_group_graph.nodes[n]['out_split_id'] is not None and processed_group_graph.out_degree(n)==0):
+                visited_outputs[processed_group_graph.nodes[n]['out_split_id']] = 0
+
+        output_paths = {}  # Tracks the path that triggers each output
+
+        # Traverse from given split input node IDs (#Start from all the nodes ids given in wordLineInputs_Split_nodeID)
+        for start_node in wordLineInputs_Split_nodeID:
+            stack = [(start_node, [start_node])]
+    
+            while stack:
+                current_node, path = stack.pop()
+                node_data = processed_group_graph.nodes[current_node]
+                literal = node_data.get('literal', '')
+                expression_root = node_data.get('ExpressionRoot')
+                out_split_id = node_data['out_split_id']
+    
+                # if expression_root is not None and processed_group_graph.out_degree(current_node)==0:
+                if expression_root is not None and processed_group_graph.out_degree(current_node)==0:
+                    visited_outputs[expression_root] = 1
+                    output_paths[expression_root] = path
+
+                # elif out_split_id is not None and processed_group_graph.out_degree(current_node)==0:
+                elif out_split_id is not None and processed_group_graph.out_degree(current_node)==0:
+                    visited_outputs[out_split_id] = 1
+                    output_paths[out_split_id] = path
+    
+                for succ in processed_group_graph.successors(current_node):
+                    succ_data = processed_group_graph.nodes[succ]
+                    succ_type = succ_data.get('BipartitePart')
+    
+                    if succ_type == 'U1':
+                        stack.append((succ, path + [succ]))
+                    elif succ_type == 'U2' and (is_passable_u2(succ) or 'O' in processed_group_graph.nodes[succ]['literal']):
+                        stack.append((succ, path + [succ]))
+    
+        return visited_outputs, output_paths        
 
 #Program the crossbar on 1024x1024 designs (Dimentions Custom)
 #Have bus serice activated in each design
@@ -321,7 +397,7 @@ class PATH_Design_Logic_Verification:
 
             self.ColOffSetForDesign_ID_group[design_ID] = (ColStart, ColEnd)
             
-            self.Bus.connect(self, design_ID, DesignIdToWordLineInputMap, OutputLine_group_Map)
+            self.Bus.connect(self, design_ID, DesignIdToWordLineInputMap, OutputLine_group_Map, processed_group_graph)
 
             # break
             
@@ -579,92 +655,3 @@ class PATH_Design_Logic_Verification:
         plt.colorbar(heatmap, label="Resistive State", orientation="vertical")
         plt.tight_layout()
         plt.show()
-
-    def RunRandomTestCasesOnEachDesign(self, num_tests=10):
-
-        design_IDs = list(self.Bus.crossbar_designs.keys())
-        testNum = 0
-
-        for z, design_ID in enumerate(design_IDs):
-            print("Design:",z,design_ID)
-            crossbar_design = self.Bus.crossbar_designs[design_ID]["crossbar_design_instance"]
-            wordLineInput   = self.Bus.crossbar_designs[design_ID]["wordLineInput"]
-            OutputLine_group_Map  = self.Bus.crossbar_designs[design_ID]["OutputLine_group_Map"]
-
-            DesignBDDgraph = self.Design_Map[design_ID]['processed_group_graph']
-        
-            #Create inputs for each bdd design
-            # Step 1: Extract unique positive variable names from SelectorLineLabels
-            input_vars = set()
-            SelectorLineLabels = self.SelectorLineLabels.copy()
-            for label in SelectorLineLabels:
-                var = label.replace('~', '')
-                if 'O' not in var:
-                    input_vars.add(var)
-            input_vars = list(input_vars)
-        
-            # Step 3: Generate and test random input assignments
-            test_results = []
-            
-            for _ in range(num_tests):
-                # create cases for those inputs
-                input_assignment = {var: random.randint(0, 1) for var in input_vars}
-        
-                # Copy the main crossbar design to execution crossbar to run executions
-                self.Crossbar_Execution = self.Crossbar.copy()
-        
-                #Selecting selector lines based on the input_assignment (Boolean literals)
-                selector_lines = [0 for _ in self.SelectorLineLabels]
-                for i, SelectorLineLabel in enumerate(self.SelectorLineLabels):
-                    if('O' not in SelectorLineLabel):
-                        if('~'==SelectorLineLabel[0] and input_assignment[SelectorLineLabel[1:]]==0):
-                            selector_lines[i] = 1
-                        elif(SelectorLineLabel in input_assignment and input_assignment[SelectorLineLabel]==1):
-                            selector_lines[i] = 1
-                    else:
-                        selector_lines[i] = 1
-        
-                #Setting selectorlines in execution crossbar
-                for col_j, selector_line in enumerate(selector_lines):
-                    if(not selector_line):
-                        for row_i in range(len(self.Crossbar_Execution)):
-                            self.Crossbar_Execution[row_i][col_j] = 2
-        
-                #Create outputMap
-                self.Output = {}
-            
-                # Run model and golden model
-                model_output = self.Execute(design_ID, wordLineInput, OutputLine_group_Map, testing_Individual_Design_Cases=True)  #Run each of those tests in its own designs
-        
-                # print('model_output', model_output)
-                
-                golden_output = self.GoldenModel(input_assignment, DesignBDDgraph) #Run them in the golden model
-
-                # print('golden_output', golden_output)
-        
-                # Compare
-                match = (model_output == golden_output)
-        
-                test_results.append({
-                    'design_ID': design_ID,
-                    'test_id': testNum + 1,
-                    'input': input_assignment,
-                    'model_output': model_output,
-                    'golden_output': golden_output,
-                    'match': match
-                })
-        
-                # Optional: Print mismatches
-                if not match:
-                    print(f"[❌] Test {testNum+1} Failed")
-                    print(f"design_ID: {design_ID}")
-                    print(f"Input:", {k: input_assignment[k] for k in sorted(input_assignment)})
-                    print(f"Model Output:", {k: model_output[k] for k in sorted(model_output)})
-                    print(f"Golden Output:", {k: golden_output[k] for k in sorted(golden_output)})
-                else:
-                    print(f"[✅] Test {testNum+1} Passed", model_output)
-                
-                testNum+=1
-            print()
-    
-        return test_results

@@ -922,9 +922,9 @@ class PATH:
             split_graphs.append(split_graph)
             
         # Debug print
-        if(split_graph_present):
-            print('---------------------------------------------------------------')
-            print('split_graph2', [split_graph.nodes[node]['literal'] for node in split_graph.nodes])
+        # if(split_graph_present):
+        #     print('---------------------------------------------------------------')
+        #     print('split_graph2', [split_graph.nodes[node]['literal'] for node in split_graph.nodes])
 
         return top_graph, split_graphs, OutputLine_Map
 
@@ -969,7 +969,7 @@ class PATH:
             self.Processed_height_constraint_graphs_Map[frozenset(in_split_ids)] = ({'processed_graph':processed_graph,'OutputLine_Map':OutputLine_Map})
             
             unprocessed_graphs.extend(split_graphs)
-            print()
+            # print()
             # break
             
         #traverse through the graph and split the graph where the height constraing fails
@@ -1086,15 +1086,15 @@ class PATH:
             word_lines_count = len(word_lines)
             word_lines.sort()
             word_lines_map = {word_line:i for i, word_line in enumerate(word_lines)}
-            print(word_lines)
+            # print(word_lines)
             for row_key in rowMap:
                 rowMap[row_key] = word_lines_map[rowMap[row_key]]
             
-            print()
-            print('======================')
-            print(colMap, rowMap)
-            print('======================')
-            print()
+            # print()
+            # print('======================')
+            # print(colMap, rowMap)
+            # print('======================')
+            # print()
 
             OutputLine_group_selectorLines_Map = {}
             output_node_dependencies_map_temp = self.get_output_node_dependencies(processed_group_graph)
@@ -1149,6 +1149,9 @@ class PATH:
     
             longPaths = self.LongestpathInTreeAndCrossbar(processed_group_graph)
 
+            for longPath in longPaths:
+                print('longPath', [processed_group_graph.nodes[node]['literal'] for node in longPath])
+            
             CrossbarLongPaths = []
             for longPath in longPaths:
                 CrossbarLongPath = []

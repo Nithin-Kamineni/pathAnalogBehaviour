@@ -1,0 +1,25 @@
+.model out
+.inputs i5 i4 i6 i1 i7 sel1 i0 sel0 i3 sel2 i2
+.outputs out
+.order sel1 sel0 i0 i1 i2 i3 i4 i5 i6 i7 sel2
+.bdd
+37 2f 36 sel1 out
+36 32 35 sel0
+2f 2b 2e sel0
+35 33 34 i0
+32 30 31 i1
+2e 2c 2d i2
+2b 29 2a i3
+34 27 1 i4
+33 0 28 i4
+31 27 1 i5
+30 0 28 i5
+2d 27 1 i6
+2c 0 28 i6
+2a 27 1 i7
+29 0 28 i7
+28 1 0 sel2
+27 0 1 sel2
+0 -1 -1 1
+1 -1 -1 0
+.end

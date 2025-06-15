@@ -1,0 +1,41 @@
+.model out
+.inputs i5 i13 i4 i9 sel3 i3 sel0 i12 i11 i14 i8 i1 i7 i10 i0 sel2 i2 i6 sel1 i15
+.outputs out
+.order sel2 sel0 sel1 i0 i10 i11 i15 i1 i2 i3 i4 i5 i6 i8 i9 i12 i13 i14 i7 sel3
+.bdd
+244 232 243 sel2 out
+243 23a 242 sel0
+232 22a 231 sel0
+23a 236 239 sel1
+231 22d 230 sel1
+242 23e 241 sel1
+22a 226 229 sel1
+241 23f 240 i0
+23e 23b 23d i10
+236 233 235 i11
+226 222 225 i15
+239 237 238 i1
+23b 1ea 221 i2
+23d 224 1eb i2
+233 1ea 221 i3
+235 224 1eb i3
+230 22e 22f i4
+229 227 228 i5
+22d 22b 22c i6
+240 221 1eb i8
+23f 1ea 224 i8
+238 221 1eb i9
+237 1ea 224 i9
+22f 221 1eb i12
+22e 1ea 224 i12
+228 221 1eb i13
+227 1ea 224 i13
+22c 221 1eb i14
+22b 1ea 224 i14
+222 1ea 221 i7
+225 224 1eb i7
+224 1eb 1ea sel3
+221 1ea 1eb sel3
+1ea -1 -1 1
+1eb -1 -1 0
+.end

@@ -1,0 +1,11 @@
+.model out
+.inputs a sel b
+.outputs out
+.order sel b a
+.bdd
+2d 2b 2c sel out
+2b 12 13 b
+2c 12 13 a
+12 -1 -1 1
+13 -1 -1 0
+.end

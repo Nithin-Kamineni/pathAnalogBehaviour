@@ -1,5 +1,5 @@
 .model c17
-.inputs 1GAT(0) 6GAT(3) 2GAT(1) 7GAT(4) 3GAT(2)
+.inputs 7GAT(4) 6GAT(3) 2GAT(1) 1GAT(0) 3GAT(2)
 .outputs 
 .order 7GAT(4) 1GAT(0) 3GAT(2) 6GAT(3) 2GAT(1)
 .bdd

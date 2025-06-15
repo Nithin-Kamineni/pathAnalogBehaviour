@@ -21,6 +21,7 @@ import seaborn as sns
 from collections import deque
 import uuid
 import copy
+import math
 
 class Bus:
     def __init__(self, MainBDD_For_GoldenModel, Topological_order):
@@ -154,7 +155,7 @@ class Bus:
                 # if(match):
             return
 
-    def CalibrateHRSValues(self, Optimisation=True):
+    def CalibrateHRSValues(self, Optimisation=True, max_iterations=6):
         design_count = 0
         for design_ID_group in self.crossbar_designs:
             crossbar_design_instance       = self.crossbar_designs[design_ID_group]['crossbar_design_instance']
@@ -163,7 +164,7 @@ class Bus:
 
             wordLineInputs = list(DesignIdItemToWordLineInputMap.values())
             
-            maxZeroCurrent, minOneCurrent = crossbar_design_instance.FindOptimalHRSvalue(design_ID_group, OutputLine_group_Map, wordLineInputs)
+            maxZeroCurrent, minOneCurrent = crossbar_design_instance.FindOptimalHRSvalue(design_ID_group, OutputLine_group_Map, wordLineInputs, max_iterations)
 
             self.WorstCaseMaxZero[design_ID_group] = maxZeroCurrent
             self.WorstCaseMinOne[design_ID_group] = minOneCurrent
@@ -277,27 +278,27 @@ class Bus:
             design_ID_group_output, outputCurrentMap = crossbar_design.Execute(design_ID_group, wordLineInputs, OutputLine_group_Map, selector_lines)
 
             #debug
-            print('wordLineInputs',wordLineInputs)
-            print('OutputLine_group_Map',OutputLine_group_Map)
-            print('design_ID_group_output', design_ID_group_output)
+            # print('wordLineInputs',wordLineInputs)
+            # print('OutputLine_group_Map',OutputLine_group_Map)
+            # print('design_ID_group_output', design_ID_group_output)
             # print()
             
             for outputLabel in design_ID_group_output:
-                if(len(outputLabel)>10):   #split_id_item output
-                    if(design_ID_group_output[outputLabel]):
-                        design_ID_item_activation_set.add(outputLabel)
-                else:
-                    Output[outputLabel] = design_ID_group_output[outputLabel]
+                for wordLineInput in design_ID_group_output[outputLabel]:
+                    if(len(outputLabel)>10):   #split_id_item output
+                        if(design_ID_group_output[outputLabel][wordLineInput]):
+                            design_ID_item_activation_set.add(outputLabel)
+                    else:
+                        Output[outputLabel] = max(design_ID_group_output[outputLabel][wordLineInput], Output[outputLabel])
 
-                outputCurrent = outputCurrentMap[outputLabel]
-                if(design_ID_group_output[outputLabel]):
-                    self.OnesCurrentFromDesignMap[design_ID_group].append(outputCurrent)
-                else:
-                    self.ZerosCurrentFromDesignMap[design_ID_group].append(outputCurrent)
+                    outputCurrent = outputCurrentMap[outputLabel][wordLineInput]
+                    if(design_ID_group_output[outputLabel][wordLineInput]):
+                        self.OnesCurrentFromDesignMap[design_ID_group].append(outputCurrent)
+                    else:
+                        self.ZerosCurrentFromDesignMap[design_ID_group].append(outputCurrent)
         
         return Output
             
-
 #Program the crossbar on 1024x1024 designs (Dimentions Custom)
 #Have bus serice activated in each design
 
@@ -338,6 +339,7 @@ class PATH_Design_Analog_Verification:
             OutputLine_group_Map               = processed_graph_map_value_map['OutputLine_group_Map']
             DesignIdItemToWordLineInputMap     = processed_graph_map_value_map['DesignIdItemToWordLineInputMap']
             LongestPath                        = processed_graph_map_value_map['LongestPaths']
+            Crossbar_disabledOutputsToInputs   = processed_graph_map_value_map['Crossbar_disabledOutputsToInputs']
             OutputLine_group_selectorLines_Map = processed_graph_map_value_map['OutputLine_group_selectorLines_Map']
             
             DesignIdToWordLineInputMap, (ColStart, ColEnd) = self.ProgramCrossbar(Crossbar_design, Selector_Lines_Map, DesignIdItemToWordLineInputMap)
@@ -426,6 +428,8 @@ class PATH_Design_Analog_Verification:
                 ordered_set.append(element)
 
         R_LRS = 1
+
+        visited = set()
         
         # Stack for depth-first traversal
         Stack = []
@@ -434,28 +438,25 @@ class PATH_Design_Analog_Verification:
         for wordLineInput in wordLineInputs:
             for j in range(len(Crossbar[wordLineInput])):
                 if Crossbar[wordLineInput][j] == R_LRS:
-                    Stack.append([(wordLineInput, j), [(wordLineInput, j)], 'w'])  # Use a list for ordered visited nodes
+                    visited.add((wordLineInput, j))
+                    Stack.append([(wordLineInput, j), 'w'])  # Use a list for ordered visited nodes
 
         # print('Crossbar[0]',Crossbar[0])
         # print('Stack',Stack)
         # print('outputBitlineIndex',outputBitlineIndex)
         while Stack:
-            [(path_i, path_j), visited, last_curr] = Stack.pop()  # Pop from the stack (LIFO)
+            [(path_i, path_j), last_curr] = Stack.pop(0)  # Pop from the queue (FIFO)
             for i in range(len(Crossbar)):
                 if last_curr == 'w':
-                    if Crossbar[i][path_j] == R_LRS and (i, path_j) not in visited:
-                        new_visited = visited.copy()
-                        add_to_ordered_set(new_visited, (i, path_j))
-                        Stack.append([(i, path_j), new_visited, 'b'])
+                    if Crossbar[i][path_j] == R_LRS and  i!=path_i and (i, path_j) not in visited:
+                        visited.add((i, path_j))
+                        Stack.append([(i, path_j), 'b'])
                 elif last_curr == 'b':
-                    if Crossbar[path_i][i] == R_LRS and (path_i, i) not in visited:
-                        new_visited = visited.copy()
-                        add_to_ordered_set(new_visited, (path_i, i))
-                        Stack.append([(path_i, i), new_visited, 'w'])
+                    if Crossbar[path_i][i] == R_LRS and i!=path_j and (path_i, i) not in visited:
+                        visited.add((path_i, i))
+                        Stack.append([(path_i, i), 'w'])
             # print('path_j', path_i, path_j)
             if(path_j==outputBitlineIndex):
-                # print('outputBitlineIndex',outputBitlineIndex)
-                # print('visited',visited)
                 return True
         return False
         
@@ -480,6 +481,8 @@ class PATH_Design_Analog_Verification:
         
         design_ID_List = []
         for outputLine in OutputLine_group_Map:
+
+            
             outputBitlineIndex = self.SelectorLinesOutputLabelsToBitlineIndex[outputLine]
 
             # print('outputBitlineIndex',outputBitlineIndex, OutputLine_group_Map[outputLine])
@@ -525,29 +528,35 @@ class PATH_Design_Analog_Verification:
             
             MultiplexedCrossbar = self.TimeMultiplexCrossbar(crossbar_excution, nonOutputBitline_indexes)
 
-            # code to execute crossbar
-            PathCurrent = self.find_path_execution_in_crossbar(MultiplexedCrossbar, wordLineInputs, outputBitlineIndex)
+            # wordLineInputs
+            # print('wordLineInputs',wordLineInputs)
 
-            outputCurrent = self.find_path_current_execution_in_crossbar(design_ID_group, MultiplexedCrossbar, wordLineInputs, outputBitlineIndex)
+            for wordLineInput in wordLineInputs:
             
-            # self.VisuvaliseCrossbar(MultiplexedCrossbar)
-            # print('---------------------------------------------------',outputCurrent)
-            # print(wordLineInputs, outputBitlineIndex)
-            # for row in MultiplexedCrossbar:
-            #     print(list([int(num) for num in row]))
-            # print('---------------------------------------------------')
+                # code to execute crossbar
+                PathCurrent = self.find_path_execution_in_crossbar(MultiplexedCrossbar, [wordLineInput], outputBitlineIndex)
+    
+                outputCurrent = self.find_path_current_execution_in_crossbar(design_ID_group, MultiplexedCrossbar, [wordLineInput], outputBitlineIndex)
             
-            # print('PathCurrent',PathCurrent)
-            # print('MultiplexedCrossbar', len(MultiplexedCrossbar), len(MultiplexedCrossbar[0]), wordLineInputs, outputBitlineIndex)
+                # self.VisuvaliseCrossbar(MultiplexedCrossbar)
+                # print('---------------------------------------------------',outputCurrent)
+                # print(wordLineInputs, outputBitlineIndex)
+                # for row in MultiplexedCrossbar:
+                #     print(list([int(num) for num in row]))
+                # print('---------------------------------------------------')
+                
+                # print('PathCurrent',PathCurrent)
+                # print('MultiplexedCrossbar', len(MultiplexedCrossbar), len(MultiplexedCrossbar[0]), wordLineInputs, outputBitlineIndex)
 
+                if(OutputLine_group_Map[outputLine] not in OutputCurrentMap):
+                    OutputCurrentMap[OutputLine_group_Map[outputLine]] = {}
+                OutputCurrentMap[OutputLine_group_Map[outputLine]][wordLineInput] = outputCurrent
 
-            OutputCurrentMap[OutputLine_group_Map[outputLine]] = outputCurrent
-            
-            if(PathCurrent):
-                Output[OutputLine_group_Map[outputLine]] = 1
-            else:
-                Output[OutputLine_group_Map[outputLine]] = 0
+                if(OutputLine_group_Map[outputLine] not in Output):
+                    Output[OutputLine_group_Map[outputLine]] = {}
+                Output[OutputLine_group_Map[outputLine]][wordLineInput] = 1 if PathCurrent else 0
 
+                
         return Output, OutputCurrentMap
     
     def find_path_current_execution_in_crossbar(self, design_ID, Crossbar, wordLineInputs, outputBitlineIndex, R_HRS=4e7):
@@ -560,11 +569,12 @@ class PATH_Design_Analog_Verification:
         # R_HRS = self.R_HRS_Map[design_ID]  # High-resistance state of the memory cell
         # R_LRS = self.R_LRS  # Low-resistance state
 
+        # R_HRS = 5e5
         if(R_HRS==4e7 and self.HRS[design_ID] is not None):
             R_HRS,_ = self.HRS[design_ID]
         
         # R_HRS = 4e7
-        R_LRS = 200
+        R_LRS = 1000
         
         R_Line_Out = 200  # 200 ohms from each column node to GND
         # R_Not = 1e12  # Large resistance for non-output columns
@@ -753,31 +763,28 @@ class PATH_Design_Analog_Verification:
         crossbar = np.full(crossbar_size, 2)
         path_cols = {y for (_, y) in LongestPath}
         path_rows = {x for (x, _) in LongestPath}
-
-        rem_cols_count = (crossbar.shape[1]-len(path_cols))
-        # rem_cols_count = 1
         
         crossbar[:,list(path_cols)] = 0
         
         for (x, y) in LongestPath:
             crossbar[x][y] = 1
 
-        count_j = 0
-        for col_j in range(len(crossbar)):
-            if(col_j not in path_cols):
-                crossbar[:,col_j] = 0
-                count_i = 0
-                for row_i in range(len(crossbar)):
-                    if(row_i not in path_rows):
-                        crossbar[row_i][col_j] = 1
-                        path_rows.add(row_i)
-                        count_i+=1
-                        if(count_i>=3):
-                            break
-                path_cols.add(col_j)
-                count_j+=1
-                if(count_j>=rem_cols_count):
-                    break
+        # count_j = 0
+        # for col_j in range(len(crossbar)):
+        #     if(col_j not in path_cols):
+        #         crossbar[:,col_j] = 0
+        #         count_i = 0
+        #         for row_i in range(len(crossbar)):
+        #             if(row_i not in path_rows):
+        #                 crossbar[row_i][col_j] = 1
+        #                 path_rows.add(row_i)
+        #                 count_i+=1
+        #                 if(count_i==2):
+        #                     break
+        #         path_cols.add(col_j)
+        #         count_j+=1
+        #         if(count_j==2):
+        #             break
 
         return crossbar
 
@@ -792,12 +799,42 @@ class PATH_Design_Analog_Verification:
     
         # Set entire columns to 2 (disabled) where selector is not enabled
         all_columns = np.arange(crossbar.shape[1])
+        # print('all_columns',all_columns)
         disabled_columns = np.setdiff1d(all_columns, EnabledSelectorLines)
+        # print('disabled_columns',disabled_columns)
         crossbar[:, disabled_columns] = 2
     
         return crossbar
 
     
+    def ModifyCrossbarforZeroCurrent(self, crossbar, disable_selector_lines, disjoint_cells_to_be_added):
+
+        mod_crossbar = crossbar.copy()
+
+        print(disable_selector_lines)
+        for disable_selector_line in disable_selector_lines:
+            mod_crossbar[:, disable_selector_line] = 2
+            
+        # for cell in disjoint_cells_to_be_added:
+        #     row_i, col_j = cell
+        #     mod_crossbar[row_i][col_j] = 0
+        
+        # for disable_selector_line in disable_selector_lines:
+        #     mod_crossbar[:, disable_selector_line] = 2
+
+        # iterate from 2 diretions using BFS for each layer
+        
+        # direction 1: iterate from all the WordLineInputs_zero_param using BFS WordLineInputs_zero_param are first layer
+        
+        # direction 2: iterate from outputCol using BFS
+
+        # for evey layer iterated in 2 directions check if there is any interating cell
+        # if there is a interacting cell store it and stop iterating it in both the direction
+
+        #Now make all the sored cells into 0's
+            
+        return mod_crossbar
+
     def ModifyCrossbarforZeroCurrent(self, crossbar, inputRow, WordLineInputs_zero, outputCol):
 
         mod_crossbar = crossbar.copy()
@@ -808,9 +845,14 @@ class PATH_Design_Analog_Verification:
         rows_used = set()
         cols_used = set()
         add_rows = 1  #make it divisible by 2
-    
-        def dfs(position, visited, current_path, last_type):
-            nonlocal add_rows
+
+        includedCutoffPaths = set()
+        path_present = False
+
+        # print('WordLineInputs_zero',WordLineInputs_zero, len(includedCutoffPaths))
+        
+        def dfs(position, visited, current_path, last_type, mainSplit=True):
+            nonlocal add_rows, path_present
             row, col = position
             
             rows_used.add(row)
@@ -826,13 +868,33 @@ class PATH_Design_Analog_Verification:
                 mid_index = (d // 2)
                 if(mid_index%2==0 and d>1):
                     mid_index+=1
-                # print('d',d)
-                # print('mid_index',mid_index, current_path[mid_index-1], current_path[mid_index])
-                mid_row, mid_col = current_path[mid_index]
-                mod_crossbar[mid_row][mid_col] = 0  # Disable the path at midpoint
-                        
+
+                flag = True
+                pre_foundIndex = None
+                if(not mainSplit):
+                    for i,cell in enumerate(current_path):
+                        if(cell in includedCutoffPaths and i<1):
+                            path_present = True
+                            break
+                        elif(cell in includedCutoffPaths and i>1):
+                            pre_foundIndex = i-1
+                            flag=False
+                            break
+                    
+                if(flag):
+                    # print('flag',pre_foundIndex)
+                    # print('mid_index',mid_index, current_path[mid_index-1], current_path[mid_index])
+                    mid_row, mid_col = current_path[mid_index]
+                    mod_crossbar[mid_row][mid_col] = 0  # Disable the path at midpoint
+                else:
+                    # print('pre_foundIndex',pre_foundIndex,len(includedCutoffPaths))
+                    pre_foundIndex_row, pre_foundIndex_col = current_path[pre_foundIndex]
+                    mod_crossbar[pre_foundIndex_row][pre_foundIndex_col] = 0
+
+                for cell in current_path:
+                    includedCutoffPaths.add(cell)
                 # print('mid_row, mid_col', mid_row, mid_col)
-                return
+                return path_present
 
             if last_type == 'w':
                 # From wordline → traverse column (same col, all rows)
@@ -860,18 +922,31 @@ class PATH_Design_Analog_Verification:
                 # print('Starting dfs...')
                 dfs(start, {start}, [start], 'w')
 
-        WordLineInputs = []
-        for WordLineInput in WordLineInputs_zero:
-            foundPath = self.find_path_execution_in_crossbar(mod_crossbar, [WordLineInput], outputCol)
-            if(not foundPath):
-                WordLineInputs.append(WordLineInput)
+        WordLineInputs = [inputRow]
+        # WordLineInputs = []
+        # for WordLineInput in WordLineInputs_zero:
+        #     foundPath = self.find_path_execution_in_crossbar(mod_crossbar, [WordLineInput], outputCol)
+        #     if(foundPath):
+        #         for c in range(cols):
+        #             if mod_crossbar[WordLineInput][c] == R_LRS:
+        #                 start = (WordLineInput, c)
+        #                 path_present = False
+        #                 path_present = dfs(start, {start}, [start], 'w', mainSplit=False)
+        #                 # print('path_present',path_present)
+        #         if(not path_present):
+        #             WordLineInputs.append(WordLineInput)
+        #     else:
+        #         WordLineInputs.append(WordLineInput)
+
+        # missing = list(set(WordLineInputs_zero)-set(WordLineInputs))
+        # print('missing',missing)
 
         # print('WordLineInputs chance',WordLineInputs)
         return mod_crossbar, WordLineInputs
                                             
-    def FindOptimalHRSvalue(self, design_ID_group, OutputLine_group_Map, wordLineInputs):
+    def FindOptimalHRSvalue(self, design_ID_group, OutputLine_group_Map, wordLineInputs, max_iterations=6):
 
-        Guardbound_Threshold = 5e-2
+        Guardbound_Threshold = 1e-3
         best_guardBound = None
 
         Crossbar_design                    = self.Design_Map[design_ID_group]['Crossbar_design']
@@ -884,7 +959,7 @@ class PATH_Design_Analog_Verification:
         self.CrossbarOneCache = {}
         
         LongestPaths = self.Design_Map[design_ID_group]['LongestPaths']
-        print('LongestPaths',LongestPaths)
+        # print('LongestPaths',LongestPaths)
 
         crossbar_design_size=(len(Crossbar_design), len(Crossbar_design[0]))
         crossbar_size=(self.Crossbar.shape[0], self.Crossbar.shape[1])
@@ -918,6 +993,7 @@ class PATH_Design_Analog_Verification:
             
         # print('WordLineInputs_zero', WordLineInputs_zero)
         
+        Crossbar_disabledOutputsToInputs = self.Design_Map[design_ID_group]['Crossbar_disabledOutputsToInputs']
         
         for outputLabel in OutputLine_group_Map:
 
@@ -931,7 +1007,26 @@ class PATH_Design_Analog_Verification:
                                             Crossbar_design,
                                             EnabledSelectorLines)
 
-            # print('WordLineInputs_zero',WordLineInputs_zero)
+            # print('EnabledSelectorLines',EnabledSelectorLines)
+
+            # disable_input_lines        = Crossbar_disabledOutputsToInputs[outputLabel]['disable_input_lines']
+            # disable_selector_lines     = Crossbar_disabledOutputsToInputs[outputLabel]['disable_selector_lines']
+            # disjoint_cells_to_be_added = Crossbar_disabledOutputsToInputs[outputLabel]['disjoint_cells_to_be_added']
+            
+            # Crossbar_zero_mod = self.ModifyCrossbarforZeroCurrent(Crossbar_zero, disable_selector_lines, disjoint_cells_to_be_added)
+            # crossbar_wordLine_inputs = list(set(WordLineInputs_zero) - set(disable_input_lines))
+
+            # print('crossbar_wordLine_inputs',len(crossbar_wordLine_inputs),outputBitlineIndex_zero)
+            
+            # foundPath = self.find_path_execution_in_crossbar(Crossbar_zero_mod, crossbar_wordLine_inputs, outputBitlineIndex_zero)
+
+            # print('foundPath 0', foundPath,'============================================', WordLineInputs_zero)
+            # if foundPath:
+            #     raise RuntimeError(f"Unexpected path found for design_ID_group={design_ID_group}, "
+            #                        f"outputLabel={outputLabel}, WordLineInput={WordLineInputs_zero}")
+
+            # cache_key = (design_ID_group, outputLabel)
+            # self.CrossbarZeroCache[cache_key] = (Crossbar_zero_mod,disable_input_lines)
 
             for WordLineInput in WordLineInputs_zero:
                     Crossbar_zero_mod, WordLineInputs = self.ModifyCrossbarforZeroCurrent(Crossbar_zero, WordLineInput, WordLineInputs_zero, outputBitlineIndex_zero)
@@ -944,17 +1039,17 @@ class PATH_Design_Analog_Verification:
                                            f"outputLabel={outputLabel}, WordLineInput={WordLineInput}")
 
                     cache_key = (design_ID_group, outputLabel, WordLineInput)
-                    self.CrossbarZeroCache[cache_key] = Crossbar_zero_mod
+                    self.CrossbarZeroCache[cache_key] = Crossbar_zero_mod, WordLineInputs
 
         
         
         
         ######################## Binary Search for R_HRS ########################
         low = 0
-        high = 2e16
+        high = 1e10
         best_R_HRS = None
         GuardBound = None
-        max_iterations = 1
+        # max_iterations = 2
         iteration = 0
 
         OnesCurrents = []
@@ -983,13 +1078,14 @@ class PATH_Design_Analog_Verification:
             for outputLabel in OutputLine_group_Map:
                 outputBitlineIndex_zero       = Selector_Lines_Map[outputLabel]
                 for WordLineInput in WordLineInputs_zero:
-                    Crossbar_zero_mod = self.CrossbarZeroCache.get((design_ID_group, outputLabel, WordLineInput))
+                    Crossbar_zero_mod, WordLineInputs_curr = self.CrossbarZeroCache.get((design_ID_group, outputLabel, WordLineInput))
                     ZerosCurrent = self.find_path_current_execution_in_crossbar(
-                        design_ID_group, Crossbar_zero_mod, [WordLineInput], outputBitlineIndex_zero, R_HRS=R_HRS
+                        design_ID_group, Crossbar_zero_mod, WordLineInputs_curr, outputBitlineIndex_zero, R_HRS=R_HRS
                     )
                     ZerosCurrent_lst.append(ZerosCurrent)
 
             ZerosCurrent = max(ZerosCurrent_lst)
+            # ZerosCurrent = sum(ZerosCurrent_lst)
             # print('ZerosCurrent',ZerosCurrent)
 
             guardBound = OnesCurrent - ZerosCurrent
@@ -997,8 +1093,8 @@ class PATH_Design_Analog_Verification:
             # print('design_ID_group',design_ID_group)
             # print('WordLineInputs_zero',WordLineInputs_zero)
             # print('OnesCurrent',OnesCurrent,"|",'ZerosCurrent',ZerosCurrent)
-            # print('guardBound', guardBound)
-            # print('R_HRS',R_HRS)
+            print('guardBound', guardBound)
+            print('R_HRS',R_HRS)
 
             if((best_R_HRS is None or R_HRS <= best_R_HRS) and guardBound > Guardbound_Threshold):
                 best_R_HRS = R_HRS
@@ -1013,12 +1109,12 @@ class PATH_Design_Analog_Verification:
     
             iteration += 1
 
-        print()
         print('design_ID_group', design_ID_group)
         print('WordLineInputs_zero',WordLineInputs_zero)
         print('ZerosCurrent',ZerosCurrent)
         print('OnesCurrent',OnesCurrent)
         print('best_R_HRS:', best_R_HRS, 'best_guardBound:', best_guardBound)
+        print()
         self.HRS[design_ID_group] = (best_R_HRS, best_guardBound)
 
         if(best_guardBound==None):

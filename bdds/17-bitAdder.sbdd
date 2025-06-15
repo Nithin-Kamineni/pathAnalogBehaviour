@@ -1,0 +1,160 @@
+.model 17_bit_adder
+.inputs b10 b16 a5 a13 b12 a6 a3 a0 a8 a1 a14 b9 a12 b5 b4 b13 b14 b11 a10 b3 a9 cin a11 a7 b1 a2 b8 b6 b7 b2 b0 a15 a4 a16 b15
+.outputs sum6 sum3 cout sum2 sum15 sum14 sum4 sum0 sum11 sum7 sum12 sum9 sum10 sum8 sum13 sum16 sum1 sum5
+.order b16 a16 a15 b15 b14 a14 b13 a13 a12 b12 a11 b11 a10 b10 a9 b9 a8 b8 a7 b7 a6 b6 b5 a5 a4 b4 a3 b3 b2 a2 a1 b1 cin b0 a0
+.bdd
+bebb bda4 b33e b16 sum16
+bdc4 beb2 bfd4 b16 cout
+b33e bf59 bbce a16
+beb2 550b8 bbce a16
+bfd4 bbce 550b9 a16
+bda4 bbce bf59 a16
+bf59 b83e bef0 a15
+bbcd b444 b449 a15 sum15
+bbce b433 bf22 a15
+b449 bf05 bf0a b15
+b433 550b8 bf0a b15
+bef0 bf05 550b8 b15
+b444 bf0a bf05 b15
+bf22 bf0a 550b9 b15
+b83e 550b9 bf05 b15
+bf05 c27a ba5c b14
+bf0a ba57 b98a b14
+beb8 bd9f bf13 b14 sum14
+bd9f bee7 bfd1 a14
+ba57 550b8 bee7 a14
+b98a bee7 550b9 a14
+ba5c bfd1 550b8 a14
+c27a 550b9 bfd1 a14
+bf13 bfd1 bee7 a14
+bfd1 bf61 bdfb b13
+bfde bedb b8be b13 sum13
+bee7 bbde c00c b13
+bedb b34f ba65 a13
+bdfb ba65 550b8 a13
+bf61 550b9 ba65 a13
+c00c b34f 550b9 a13
+b8be ba65 b34f a13
+bbde 550b8 b34f a13
+b34f bbbf bed4 a12
+bf20 bfd8 b842 a12 sum12
+ba65 bbb3 bef9 a12
+bed4 b84a 550b9 b12
+bef9 bdab 550b8 b12
+bbb3 550b9 bdab b12
+bfd8 b84a bdab b12
+b842 bdab b84a b12
+bbbf 550b8 b84a b12
+bff5 be02 bf01 a11 sum11
+b84a c020 c0ea a11
+bdab bf82 bbbc a11
+bf82 550b9 beaf b11
+bbbc beaf 550b8 b11
+bf01 beaf bba9 b11
+c0ea bba9 550b9 b11
+c020 550b8 bba9 b11
+be02 bba9 beaf b11
+beaf bed2 b8a4 a10
+b840 bff9 bfdb a10 sum10
+bba9 b83b ba53 a10
+bed2 550b9 c0fe b10
+bff9 bbcc c0fe b10
+ba53 bbcc 550b9 b10
+b8a4 c0fe 550b8 b10
+bfdb c0fe bbcc b10
+b83b 550b8 bbcc b10
+c0fe bbb1 b34d a9
+bbcc b8ca bf0d a9
+b440 b34b bc92 a9 sum9
+b8ca 550b8 b844 b9
+b34b b844 bed8 b9
+bf0d b844 550b9 b9
+b34d bed8 550b8 b9
+bbb1 550b9 bed8 b9
+bc92 bed8 b844 b9
+b8ec ba5e bbb9 a8 sum8
+bed8 c27c bbca a8
+b844 b88f bec9 a8
+ba5e b845 c008 b8
+bec9 b845 550b9 b8
+bbb9 c008 b845 b8
+bbca c008 550b8 b8
+b88f 550b8 b845 b8
+c27c 550b9 c008 b8
+c008 b850 bbad a7
+b845 b348 b8a0 a7
+ba55 bbdd bd9a a7 sum7
+b348 550b8 550ed b7
+bbdd 550ed b849 b7
+bd9a b849 550ed b7
+b8a0 550ed 550b9 b7
+b850 550b9 b849 b7
+bbad b849 550b8 b7
+bf32 bbb6 b445 a6 sum6
+b849 bee8 beba a6
+550ed bf02 bff4 a6
+b445 bee1 b340 b6
+bff4 b340 550b9 b6
+bf02 550b8 b340 b6
+beba bee1 550b8 b6
+bee8 550b9 bee1 b6
+bbb6 b340 bee1 b6
+bf35 b98d bf0b b5 sum5
+bee1 bebd b33f b5
+b340 b347 b33d b5
+b347 550b8 b83c a5
+b98d b83c b838 a5
+bf0b b838 b83c a5
+bebd 550b9 b838 a5
+b33d b83c 550b9 a5
+b33f b838 550b8 a5
+b838 ba5f bd90 a4
+b83c b8e9 b864 a4
+bbe0 b351 b848 a4 sum4
+b8e9 550b8 bfcb b4
+b864 bfcb 550b9 b4
+bd90 bedd 550b8 b4
+ba5f 550b9 bedd b4
+b351 bfcb bedd b4
+b848 bedd bfcb b4
+b890 bbb7 bbda a3 sum3
+bedd bff3 bef2 a3
+bfcb b841 bc7c a3
+b841 550b8 ba69 b3
+bbb7 ba69 bfda b3
+bbda bfda ba69 b3
+bff3 550b9 bfda b3
+bc7c ba69 550b9 b3
+bef2 bfda 550b8 b3
+bfda bf8f bbc3 b2
+ba69 b989 bf39 b2
+be08 beb7 bee2 b2 sum2
+bf39 bf07 550b9 a2
+bf8f 550b9 bedf a2
+bbc3 bedf 550b8 a2
+beb7 bf07 bedf a2
+bee2 bedf bf07 a2
+b989 550b8 bf07 a2
+bedf becb 550f4 a1
+bf07 b356 b84d a1
+b86f bed5 ba54 a1 sum1
+becb 550b9 bc8d b1
+550f4 bc8d 550b8 b1
+ba54 bc8d b987 b1
+b84d b987 550b9 b1
+bed5 b987 bc8d b1
+b356 550b8 b987 b1
+bc8d bc98 bf2b cin
+bfe9 bf1a bdc5 cin sum0
+b987 beed ba56 cin
+bf1a bbac b44b b0
+ba56 bbac 550b9 b0
+bf2b b44b 550b8 b0
+bdc5 b44b bbac b0
+beed 550b8 bbac b0
+bc98 550b9 b44b b0
+b44b 550b9 550b8 a0
+bbac 550b8 550b9 a0
+550b8 -1 -1 1
+550b9 -1 -1 0
+.end

@@ -1,0 +1,73 @@
+.model out
+.inputs i5 i31 i4 i13 i9 sel3 i18 i3 sel0 i24 i12 i17 i19 i11 i23 i14 i27 i8 i16 i25 i1 i7 i20 i10 sel4 i0 i29 sel2 i2 i26 i6 sel1 i30 i28 i15 i22 i21
+.outputs out
+.order sel2 sel3 sel1 sel0 i9 i4 i3 i22 i2 i16 i14 i12 i10 i1 i7 i6 i5 i31 i30 i28 i26 i25 i24 i20 i19 i18 i17 i0 i11 i23 i13 i15 i21 i27 i29 i8 sel4
+.bdd
+5fd 5db 5fc sel2 out
+5fc 5eb 5fb sel3
+5db 5ca 5da sel3
+5ca 5c2 5c9 sel1
+5eb 5e2 5ea sel1
+5da 5d2 5d9 sel1
+5fb 5f2 5fa sel1
+5d9 5d5 5d8 sel0
+5fa 5f5 5f9 sel0
+5f2 5ee 5f1 sel0
+5c9 5c5 5c8 sel0
+5ea 5e5 5e9 sel0
+5c2 5be 5c1 sel0
+5d2 5cd 5d1 sel0
+5e2 5de 5e1 sel0
+5e5 5e3 5e4 i9
+5d8 5d6 5d7 i4
+5ee 5ec 5ed i3
+5d1 5ce 5d0 i22
+5f1 5ef 5f0 i2
+5f9 5f6 5f8 i16
+5c1 5bf 5c0 i14
+5c8 5c6 5c7 i12
+5e1 5df 5e0 i10
+5f5 5f3 5f4 i1
+5cd 5cb 5cc i7
+5d0 5bc 552 i6
+5ce 551 5b9 i6
+5d5 5d3 5d4 i5
+5be 5ba 5bd i31
+5c0 5b9 552 i30
+5bf 551 5bc i30
+5c7 5b9 552 i28
+5c6 551 5bc i28
+5e0 5b9 552 i26
+5df 551 5bc i26
+5e4 5b9 552 i25
+5e3 551 5bc i25
+5e9 5e6 5e8 i24
+5d7 5b9 552 i20
+5d6 551 5bc i20
+5ed 5b9 552 i19
+5ec 551 5bc i19
+5f0 5b9 552 i18
+5ef 551 5bc i18
+5f4 5b9 552 i17
+5f3 551 5bc i17
+5f8 5bc 552 i0
+5f6 551 5b9 i0
+5de 5dc 5dd i11
+5cc 5b9 552 i23
+5cb 551 5bc i23
+5c5 5c3 5c4 i13
+5bd 5bc 552 i15
+5ba 551 5b9 i15
+5d4 5b9 552 i21
+5d3 551 5bc i21
+5dd 5b9 552 i27
+5dc 551 5bc i27
+5c4 5b9 552 i29
+5c3 551 5bc i29
+5e8 5bc 552 i8
+5e6 551 5b9 i8
+5bc 552 551 sel4
+5b9 551 552 sel4
+551 -1 -1 1
+552 -1 -1 0
+.end

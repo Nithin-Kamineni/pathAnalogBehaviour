@@ -1,0 +1,15 @@
+.model out
+.inputs sel0 i1 sel1 i2 i3 i0
+.outputs out
+.order sel1 sel0 i0 i1 i2 i3
+.bdd
+3f 3b 3e sel1 out
+3e 3c 3d sel0
+3b 39 3a sel0
+3d 1e 1f i0
+3c 1e 1f i1
+3a 1e 1f i2
+39 1e 1f i3
+1e -1 -1 1
+1f -1 -1 0
+.end

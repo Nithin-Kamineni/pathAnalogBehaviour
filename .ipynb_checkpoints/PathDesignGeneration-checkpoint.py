@@ -547,8 +547,6 @@ class PATH:
         queue = deque(roots)
         visited.update(roots)
 
-        
-
         # print('roots',roots)
         # print('top_graph in func', [top_graph.nodes[n]['literal'] for n in top_graph.nodes])
 
@@ -721,8 +719,9 @@ class PATH:
 
         # Step 2: Find the root nodes (U1)
         root_nodes = [n for n in top_graph.nodes if top_graph.in_degree(n) == 0 and top_graph.nodes[n].get("BipartitePart") == "U1"]
+        # print('root_nodes',root_nodes)
         # for root_node in root_nodes:
-            # print('root_node',top_graph.nodes[root_node]['literal'])
+        #     print('root_node',top_graph.nodes[root_node]['literal'])
 
         # Step 3: Find split_nodes(u1) in top_graph
         pred_split_nodes, succ_split_nodes = self.find_split_nodes(top_graph)
@@ -804,6 +803,7 @@ class PATH:
                 output_node_to_literal_map[u1_node] = []
             output_node_to_literal_map[u1_node].append({'split_id':split_id, 'literal':literal, 'added_output_node_id':added_output_node_id, 'endingNodeLabel':endingNodeLabel})
 
+        
         # Step 8.2: Add output nodes for U2 node in the top graph
         for u2_node in u2_nodes_set:
             top_graph, added_output_node_id, literal, endingNodeLabel = self.add_output_nodes(top_graph, u2_node)
@@ -855,6 +855,8 @@ class PATH:
 
             # Step 9.2.3: Record included nodes of split graph
             split_graph_included_nodes.update(subgraph_nodes)
+
+        # print(123456)
 
         # Step 9.3: split_nodes that have successor connections from U2 node (only include successor U1 node of U2_parent)
         for u2_parent, u1_children in inverse_map_graph_chunk_2.items():
@@ -1149,8 +1151,8 @@ class PATH:
     
             longPaths = self.LongestpathInTreeAndCrossbar(processed_group_graph)
 
-            for longPath in longPaths:
-                print('longPath', [processed_group_graph.nodes[node]['literal'] for node in longPath])
+            # for longPath in longPaths:
+            #     print('longPath', [processed_group_graph.nodes[node]['literal'] for node in longPath])
             
             CrossbarLongPaths = []
             for longPath in longPaths:
@@ -1164,27 +1166,194 @@ class PATH:
                     
                     CrossbarLongPath.append((row_index, col_index))
                 CrossbarLongPaths.append(CrossbarLongPath)
-                    
+
             self.Processed_group_graphs_Map[design_ID_group]['LongestPaths']  = CrossbarLongPaths
+            
+            disabledOutputsToInputs = self.LargestDisjointPathInDAG(processed_group_graph)
+
+            Crossbar_disabledOutputsToInputs = {}
+            disjoint_cells_to_be_added = []
+            for outputLabel in disabledOutputsToInputs:
+                disable_input_lines = disabledOutputsToInputs[outputLabel]['disable_input_lines']
+                disable_selector_lines = disabledOutputsToInputs[outputLabel]['disable_selector_lines']
+                disjoint_nodes_to_be_added = disabledOutputsToInputs[outputLabel]['disjoint_nodes_to_be_added']
+                input_connected_nodes = disabledOutputsToInputs[outputLabel]['input_connected_nodes']
+                output_connected_nodes = disabledOutputsToInputs[outputLabel]['output_connected_nodes']
+                
+                crossbar_disable_input_lines = []
+                for node in disable_input_lines:
+                    row_index = rowMap[node]
+                    crossbar_disable_input_lines.append(row_index)
+
+                crossbar_disable_selector_lines = []
+                for node in disable_selector_lines:
+                    col_index = colMap[node]
+                    crossbar_disable_selector_lines.append(col_index)
+
+                disjoint_nodes_to_be_added.sort(key = lambda x:(x[0],x[1]))
+
+                disabled_cols = crossbar_disable_selector_lines.copy()
+
+                # print('disabled_cols',disabled_cols)
+                # print('disjoint_nodes_to_be_added',disjoint_nodes_to_be_added)
+
+                for u1_cell, u2_cell in disjoint_nodes_to_be_added:
+                    disjoint_cells_to_be_added.append((rowMap[u1_cell], colMap[u2_cell]))
+
+                # print('disjoint_cells_to_be_added',disjoint_cells_to_be_added)
+                # print()
+                    
+                Crossbar_disabledOutputsToInputs[outputLabel] = {
+                    'disable_input_lines':crossbar_disable_input_lines, 
+                    'disable_selector_lines':crossbar_disable_selector_lines,
+                    'disjoint_cells_to_be_added':disjoint_cells_to_be_added
+                }
+                
+            self.Processed_group_graphs_Map[design_ID_group]['Crossbar_disabledOutputsToInputs']  = Crossbar_disabledOutputsToInputs
             
         self.GraphProcessPhase = "5. Crossbar Realization"
 
-    def InferPrerequisiteTrees(self):
-        # Processed_graphs_Map_key is a frozen set of design_Ids
-        for Processed_graphs_Map_key in self.Processed_graphs_Map:
-            self.Processed_graphs_Map[Processed_graphs_Map_key]['PrerequisiteTrees'] = set() #{design_id: Prerequisite DesignIds}
+    def LargestDisjointPathInDAG(self, graph):
+        # print('LargestDisjointPathInDAG')
+    
+        input_nodes = {n for n, deg in graph.in_degree() if deg == 0}
+        for node in graph.nodes:
+            if len(graph.nodes[node].get('in_split_id', [])) > 0:
+                input_nodes.add(node)
+    
+        output_nodes = {node for node in graph.nodes if 'O' in graph.nodes[node].get('literal', '')}
+        # print("Output Nodes:", output_nodes)
 
-            for Processed_graphs_Map_key_j in self.Processed_graphs_Map:
-                OutputLine_Map = self.Processed_graphs_Map[Processed_graphs_Map_key_j]['OutputLine_Map']
-                for outputLabel, outputSplit_Id in OutputLine_Map.items():
-                    if(outputSplit_Id in Processed_graphs_Map_key):
-                        print('aa')
-                        self.Processed_graphs_Map[Processed_graphs_Map_key]['PrerequisiteTrees'].add(Processed_graphs_Map_key_j)
+        disabledOutputsToInputs = {}
+    
+        for output in output_nodes:
+            # print(f"\nProcessing Output Node: {output}")
+    
+            reached_from_input = set(input_nodes)
+            reached_from_output = set([output])
+    
+            queue_input = deque(input_nodes)
+            queue_output = deque([output])
+    
+            # Track newly added in each layer
+            next_input_layer = set(input_nodes)
+            next_output_layer = set([output])
+    
+            intersecting_nodes = set()
+            visited_input = set(input_nodes)
+            visited_output = set([output])
 
-            print('88888888888', Processed_graphs_Map_key, self.Processed_graphs_Map[Processed_graphs_Map_key]['OutputLine_Map'])
-            print('99999999999', self.Processed_graphs_Map[Processed_graphs_Map_key]['PrerequisiteTrees'])
-            print('----------------------------------------------')
+            disjoint_nodes_to_be_added = []
+    
+            while queue_input or queue_output:
+                # Process one input layer
+                # if(len(next_input_layer)<len(next_output_layer)):
+                if(len(next_input_layer)<len(next_output_layer) or len(queue_output)==0):
+                    current_input_layer = list(queue_input)
+                    queue_input.clear()
+                    for node in current_input_layer:
+                        for neighbor in graph.successors(node):
+                            if neighbor not in visited_input:
+                                visited_input.add(neighbor)
+                                queue_input.append(neighbor)
+                                next_input_layer.add(neighbor)
+    
+                # Process one output layer
+                current_output_layer = list(queue_output)
+                queue_output.clear()
+                for node in current_output_layer:
+                    for pred in graph.predecessors(node):
+                        if pred not in visited_output:
+                            visited_output.add(pred)
+                            queue_output.append(pred)
+                            next_output_layer.add(pred)
 
+                intersection_nodes = next_input_layer & next_output_layer
+
+                # print('len(next_input_layer)',len(next_input_layer))
+                # print('len(next_output_layer)',len(next_output_layer))
+                # print('len(queue_input)',len(queue_input))
+                # print('len(queue_output)',len(queue_output))
+                # print('len(intersection_nodes)',len(intersection_nodes))
+                # print()
+    
+                # Check for intersection between current layers
+                # intersection_nodes = next_input_layer & next_output_layer
+                intersection = {node for node in intersection_nodes if graph.nodes[node]['BipartitePart']=='U2'}
+                if intersection:
+                    intersecting_nodes.update(intersection)
+
+                    #remove the connection of predessesor to inyteraction node and send that node cell so that it can be set to high resistive state
+                    for node in intersection:
+                        for parent in graph.predecessors(node): # find parents of that node - add a disjoint child node to parents
+                            disjoint_nodes_to_be_added.append((parent, node))
+
+                    # Remove intersecting nodes from next queues to avoid further traversal
+                    queue_input = deque([node for node in queue_input if node not in intersection])
+                    queue_output = deque([node for node in queue_output if node not in intersection])
+                    
+                next_input_layer -= intersection
+                # next_output_layer -= intersection
+
+            outputNodeLabel = graph.nodes[output].get('literal', '')
+
+            # print('--------------------------------------------------------')
+
+            #inputs that need to be disabled
+            graph_copy = copy.deepcopy(graph)
+            disable_input_lst = self.find_input_nodes_of_paths(graph_copy, input_nodes, output, disjoint_nodes_to_be_added)
+
+            # print('disable_input_lst',disable_input_lst)
+
+            disabledOutputsToInputs[outputNodeLabel] = {"disable_selector_lines":intersecting_nodes, 
+                                                        "disable_input_lines":disable_input_lst, 
+                                                        "disjoint_nodes_to_be_added":disjoint_nodes_to_be_added,
+                                                        "input_connected_nodes":next_input_layer,
+                                                        "output_connected_nodes":next_output_layer,
+                                                       }
+
+            current_input_nodes = list(set(input_nodes) - set(disable_input_lst))
+
+            # Verify disconnection
+            graph_copy = copy.deepcopy(graph)
+            is_disconnected, problemPath = self.verify_disconnection(graph_copy, current_input_nodes, output, disjoint_nodes_to_be_added)
+
+            if not is_disconnected:
+                print(problemPath)
+                raise RuntimeError(
+                    f"[ERROR] Output node {graph.nodes[output]['literal']} is still reachable from at least one input after removing intersecting nodes: {intersecting_nodes}"
+                )
+
+        return disabledOutputsToInputs
+
+    def find_input_nodes_of_paths(self, graph, input_nodes, output_node, disabled_edges):
+        # Remove the intersecting (disabled) nodes from the graph copy
+        # graph.remove_nodes_from(disabled_nodes)
+
+        graph.remove_edges_from(disabled_edges)
+
+        disable_inputs_lst = []
+        # Check if any input node still has a path to the output node
+        for input_node in input_nodes:
+            if nx.has_path(graph, input_node, output_node):
+                path = nx.shortest_path(graph, input_node, output_node)
+                disable_inputs_lst.append(path[0])
+        return disable_inputs_lst
+                
+        
+    def verify_disconnection(self, graph, input_nodes, output_node, disabled_edges):
+        # Remove the intersecting (disabled) nodes from the graph copy
+        # graph.remove_nodes_from(disabled_nodes)
+        graph.remove_edges_from(disabled_edges)
+    
+        # Check if any input node still has a path to the output node
+        for input_node in input_nodes:
+            if nx.has_path(graph, input_node, output_node):
+                path = nx.shortest_path(graph, input_node, output_node)
+                return False, path  # A path still exists
+        return True, []  # Fully disconnected
+
+        
     def LongestpathInTreeAndCrossbar(self, graph):
 
         def dag_longest_path_lengths(G, start_node):

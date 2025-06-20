@@ -220,7 +220,7 @@ class Bus:
                     for wordLineInput in DesignIdItemToWordLineInputMap[design_ID_item]:
                         # print('wordLineInput_lst',wordLineInput_lst)
                         # for wordLineInput in wordLineInput_lst:
-                            wordLineInputs.append(wordLineInput)  # Add mutiple wordline inputs of following design_ID
+                        wordLineInputs.append(wordLineInput)  # Add mutiple wordline inputs of following design_ID
                     design_ID_item_lst.append(design_ID_item)
             # print('wordLineInputs',wordLineInputs)
 

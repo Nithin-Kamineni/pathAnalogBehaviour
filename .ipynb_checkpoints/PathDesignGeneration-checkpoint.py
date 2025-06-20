@@ -941,7 +941,8 @@ class PATH:
             self.Graph.nodes[node]['split_id'] = None
             self.Graph.nodes[node]['out_split_id'] = None
             self.Graph.nodes[node]['in_split_id'] = set()
-            
+
+        first_graph = True    
         unprocessed_graphs = [self.Graph]
         while(unprocessed_graphs):
             unprocessed_graph = unprocessed_graphs.pop(0)
@@ -949,8 +950,14 @@ class PATH:
 
             # print('measured_graph as ds',{measured_graph.nodes[n]['literal']:measured_graph.nodes[n]['distance'] for n in measured_graph if measured_graph.nodes[n]['BipartitePart']=="U1"})
             #split_graphs has wordLineID in root node or start
-            #processed_graph has wprdLineID in leaf or end
+
+            if not first_graph:
+                self.HeightThereshold = height - 2
+            
             processed_graph, split_graphs, OutputLine_Map = self.split_graphs_with_height(measured_graph)
+            
+            # make bool negative after the first graph processing
+            first_graph = False
 
             # print('root node ids of processed_graph1', [n for n in processed_graph.nodes if processed_graph.in_degree(n) == 0 and processed_graph.nodes[n].get("BipartitePart") == "U1"])
             
@@ -1067,7 +1074,77 @@ class PATH:
 
         self.GraphProcessPhase = "5. Graph Splitting with Crossbar size constraint"
 
+    def GraphAddRootNodeToInputLines(self):
+        for design_ID in self.Processed_height_constraint_graphs_Map:
+            processed_group_graph = self.Processed_height_constraint_graphs_Map[design_ID]['processed_graph']
+
+            #Dont need to add additional nodes to the first divided design sbdd
+            if(design_ID==frozenset({})):
+                continue
+
+            InputNodes = []
+            for node in processed_group_graph.nodes:
+                if(processed_group_graph.nodes[node]['in_split_id']):
+                    InputNodes.append(node)         
+            # print('InputNodes',InputNodes,design_ID)
+            
+            #add root node U1 and next node U2
+            # --- Add U1 Root Node ---
+            u1_literal = min([
+                int(processed_group_graph.nodes[node]['literal'].split('(')[0])
+                for node in processed_group_graph
+                if processed_group_graph.nodes[node]['BipartitePart'] == 'U1'
+            ] + [2]) - 1  # fallback to 1 if no U1 exists yet
+
+            u1_node_id = f"{u1_literal}_ID"
+
+            U1_node_attributes = {
+                'ID': u1_node_id,
+                'literal': str(u1_literal),
+                'ExpressionRoot': None,
+                'BipartitePart': 'U1',
+                'split_id': None,
+                'in_split_id': set(),
+                'out_split_id': None
+            }
+            processed_group_graph.add_node(u1_node_id, **U1_node_attributes)
+
+            # Get next EdgeNode index
+            edge_node_ids = [
+                int(str(node).split("_")[-1])
+                for node in processed_group_graph.nodes
+                if str(node).startswith("EdgeNode_")
+            ]
+            edge_node_index = max(edge_node_ids) + 1 if edge_node_ids else 1
+            
+            # Connect U2 to each input node
+            for input_node in InputNodes:
+                
+                in_split_ids = processed_group_graph.nodes[input_node]['in_split_id']
+                # print('in_split_ids',in_split_ids)
+
+                for in_split_id in in_split_ids:
         
+                    # --- Add U2 Connector Node ---
+                    u2_literal = str(in_split_id)
+                    u2_node_id = f"EdgeNode_{edge_node_index}"
+                    processed_group_graph.add_node(
+                        u2_node_id,
+                        ID=u2_node_id,
+                        literal=u2_literal,
+                        BipartitePart="U2",
+                        split_id=None,
+                        in_split_id=set(),
+                        out_split_id=None
+                    )
+        
+                    # Connect U1 (top) to U2 (middle)
+                    processed_group_graph.add_edge(u1_node_id, u2_node_id)
+    
+                    # Connect U2 (middle) to U1 (wordline-Input)
+                    processed_group_graph.add_edge(u2_node_id, input_node)
+
+            #nODE u2 IS CHARGED BY SELECTORLINE INPUT OF OUTPUT OF PREVIOUS GRAPH.
 
     def CrossbarDesignRelalization(self):
 
@@ -1112,6 +1189,7 @@ class PATH:
             self.Processed_group_graphs_Map[design_ID_group]['Selector_Lines_Map'] = [f"C{i+1}" for i in range(bit_line_counter)]
             for col in colMap:
                 self.Processed_group_graphs_Map[design_ID_group]['Selector_Lines_Map'][colMap[col]] = processed_group_graph.nodes[col]['literal']
+            # print(self.Processed_group_graphs_Map[design_ID_group]['Selector_Lines_Map'])
 
             #Initialising crossbar design
             self.Processed_group_graphs_Map[design_ID_group]['Crossbar_design'] = [[0 for _ in range(bit_line_counter)] for _ in range(word_lines_count)]
@@ -1135,7 +1213,6 @@ class PATH:
                     self.Processed_group_graphs_Map[design_ID_group]['DesignIdItemToWordLineInputMap'][input_split_id].append(rowMap[input_node_id])
                     # break
                 
-            
             for i,(u, v, data) in enumerate(processed_group_graph.edges(data=True)):
                 if(processed_group_graph.nodes[u]['BipartitePart']=='U2'):
                     row_i = rowMap[processed_group_graph.nodes[v]['ID']]

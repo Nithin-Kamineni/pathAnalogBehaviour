@@ -820,8 +820,8 @@ class PATH:
                     output_node_to_literal_map[u1_node] = []
                 output_node_to_literal_map[u1_node].append({'split_id':split_id, 'literal':literal, 'added_output_node_id':added_output_node_id, 'endingNodeLabel':endingNodeLabel})
                 
-                
-            
+        print(1, len(inverse_map_graph_chunk_1), len(inverse_map_graph_chunk_2))
+        
         # Step 9: Create split graphs from inverse_map_graph_chunk_1 and inverse_map_graph_chunk_2
         split_graphs = []
 
@@ -856,7 +856,7 @@ class PATH:
             # Step 9.2.3: Record included nodes of split graph
             split_graph_included_nodes.update(subgraph_nodes)
 
-        # print(123456)
+        print(123456)
 
         # Step 9.3: split_nodes that have successor connections from U2 node (only include successor U1 node of U2_parent)
         for u2_parent, u1_children in inverse_map_graph_chunk_2.items():
@@ -1144,6 +1144,8 @@ class PATH:
                     # Connect U2 (middle) to U1 (wordline-Input)
                     processed_group_graph.add_edge(u2_node_id, input_node)
 
+                    edge_node_index+=1
+
             #nODE u2 IS CHARGED BY SELECTORLINE INPUT OF OUTPUT OF PREVIOUS GRAPH.
 
     def CrossbarDesignRelalization(self):
@@ -1245,45 +1247,31 @@ class PATH:
                 CrossbarLongPaths.append(CrossbarLongPath)
 
             self.Processed_group_graphs_Map[design_ID_group]['LongestPaths']  = CrossbarLongPaths
-            
+
             disabledOutputsToInputs = self.LargestDisjointPathInDAG(processed_group_graph)
 
             Crossbar_disabledOutputsToInputs = {}
-            disjoint_cells_to_be_added = []
             for outputLabel in disabledOutputsToInputs:
-                disable_input_lines = disabledOutputsToInputs[outputLabel]['disable_input_lines']
-                disable_selector_lines = disabledOutputsToInputs[outputLabel]['disable_selector_lines']
-                disjoint_nodes_to_be_added = disabledOutputsToInputs[outputLabel]['disjoint_nodes_to_be_added']
-                input_connected_nodes = disabledOutputsToInputs[outputLabel]['input_connected_nodes']
-                output_connected_nodes = disabledOutputsToInputs[outputLabel]['output_connected_nodes']
+                final_edges = disabledOutputsToInputs[outputLabel]['final_edges']
+
+                disconnected_cells = []
+                for final_edge in final_edges:
+                    u1_node, u2_node = final_edge
+                    if(processed_group_graph.nodes[u1_node]['BipartitePart']!='U1'):
+                        u1_node, u2_node = u2_node, u1_node
                 
-                crossbar_disable_input_lines = []
-                for node in disable_input_lines:
-                    row_index = rowMap[node]
-                    crossbar_disable_input_lines.append(row_index)
+                    row_index = rowMap[u1_node]
+                    col_index = colMap[u2_node]
 
-                crossbar_disable_selector_lines = []
-                for node in disable_selector_lines:
-                    col_index = colMap[node]
-                    crossbar_disable_selector_lines.append(col_index)
+                    disconnected_cells.append((row_index, col_index))
 
-                disjoint_nodes_to_be_added.sort(key = lambda x:(x[0],x[1]))
-
-                disabled_cols = crossbar_disable_selector_lines.copy()
-
-                # print('disabled_cols',disabled_cols)
-                # print('disjoint_nodes_to_be_added',disjoint_nodes_to_be_added)
-
-                for u1_cell, u2_cell in disjoint_nodes_to_be_added:
-                    disjoint_cells_to_be_added.append((rowMap[u1_cell], colMap[u2_cell]))
-
-                # print('disjoint_cells_to_be_added',disjoint_cells_to_be_added)
+                # print('disconnected_cells',disconnected_cells, outputLabel)
+                # print('disconnected_cells',{col_j for _,col_j in disconnected_cells})
+                # print('OutputLine_group_selectorLines_Map',sorted(OutputLine_group_selectorLines_Map[outputLabel]))
                 # print()
                     
                 Crossbar_disabledOutputsToInputs[outputLabel] = {
-                    'disable_input_lines':crossbar_disable_input_lines, 
-                    'disable_selector_lines':crossbar_disable_selector_lines,
-                    'disjoint_cells_to_be_added':disjoint_cells_to_be_added
+                    'disconnected_cells':disconnected_cells,
                 }
                 
             self.Processed_group_graphs_Map[design_ID_group]['Crossbar_disabledOutputsToInputs']  = Crossbar_disabledOutputsToInputs
@@ -1293,107 +1281,173 @@ class PATH:
     def LargestDisjointPathInDAG(self, graph):
         # print('LargestDisjointPathInDAG')
     
-        input_nodes = {n for n, deg in graph.in_degree() if deg == 0}
-        for node in graph.nodes:
-            if len(graph.nodes[node].get('in_split_id', [])) > 0:
-                input_nodes.add(node)
-    
+        input_nodes = [n for n, deg in graph.in_degree() if deg == 0]
+
+        input_node = input_nodes[0]
+        
         output_nodes = {node for node in graph.nodes if 'O' in graph.nodes[node].get('literal', '')}
-        # print("Output Nodes:", output_nodes)
+
+        source = input_node
 
         disabledOutputsToInputs = {}
-    
+        
         for output in output_nodes:
-            # print(f"\nProcessing Output Node: {output}")
     
-            reached_from_input = set(input_nodes)
-            reached_from_output = set([output])
+            # Find all ancestors of the output
+            ancestors = nx.ancestors(graph, output)
     
-            queue_input = deque(input_nodes)
-            queue_output = deque([output])
+            # Include the output node itself
+            relevant_nodes = ancestors | {output}
     
-            # Track newly added in each layer
-            next_input_layer = set(input_nodes)
-            next_output_layer = set([output])
-    
-            intersecting_nodes = set()
-            visited_input = set(input_nodes)
-            visited_output = set([output])
+            # Create a subgraph and make a deep copy
+            subgraph = graph.subgraph(relevant_nodes).copy()
 
-            disjoint_nodes_to_be_added = []
-    
-            while queue_input or queue_output:
-                # Process one input layer
-                # if(len(next_input_layer)<len(next_output_layer)):
-                if(len(next_input_layer)<len(next_output_layer) or len(queue_output)==0):
-                    current_input_layer = list(queue_input)
-                    queue_input.clear()
-                    for node in current_input_layer:
-                        for neighbor in graph.successors(node):
-                            if neighbor not in visited_input:
-                                visited_input.add(neighbor)
-                                queue_input.append(neighbor)
-                                next_input_layer.add(neighbor)
-    
-                # Process one output layer
-                current_output_layer = list(queue_output)
-                queue_output.clear()
-                for node in current_output_layer:
-                    for pred in graph.predecessors(node):
-                        if pred not in visited_output:
-                            visited_output.add(pred)
-                            queue_output.append(pred)
-                            next_output_layer.add(pred)
+            sink = output
 
-                intersection_nodes = next_input_layer & next_output_layer
+            # --------------------------------------------------
+            # 1.  total number of directed edges  →  k
+            # --------------------------------------------------
+            k = subgraph.number_of_edges()          # 11 for the toy example
+            half_k = k // 2                # ⌊k/2⌋  (5 here)
 
-                # print('len(next_input_layer)',len(next_input_layer))
-                # print('len(next_output_layer)',len(next_output_layer))
-                # print('len(queue_input)',len(queue_input))
-                # print('len(queue_output)',len(queue_output))
-                # print('len(intersection_nodes)',len(intersection_nodes))
-                # print()
-    
-                # Check for intersection between current layers
-                # intersection_nodes = next_input_layer & next_output_layer
-                intersection = {node for node in intersection_nodes if graph.nodes[node]['BipartitePart']=='U2'}
-                if intersection:
-                    intersecting_nodes.update(intersection)
+            # --------------------------------------------------
+            # 2.  layer-by-layer BFS on **edges**
+            # --------------------------------------------------
+            def bfs_edges_forward(graph, start, limit):
+                """Forward BFS on edges from source, strictly limited to `limit` edges."""
+                q = deque([start])
+                seen_nodes = {start}
+                collected = set()
+            
+                while q and len(collected) < limit:
+                    u = q.popleft()
+                    for v in graph.successors(u):
+                        edge = (u, v)
+                        if edge not in collected:
+                            collected.add(edge)
+                            if len(collected) == limit:
+                                return collected
+                            if v not in seen_nodes:
+                                seen_nodes.add(v)
+                                q.append(v)
+                return collected
+            
+            def bfs_edges_backward(graph, start, limit):
+                """Backward BFS on edges from sink, strictly limited to `limit` edges."""
+                q = deque([start])
+                seen_nodes = {start}
+                collected = set()
+            
+                while q and len(collected) < limit:
+                    u = q.popleft()
+                    for v in graph.predecessors(u):
+                        edge = (v, u)
+                        if edge not in collected:
+                            collected.add(edge)
+                            if len(collected) == limit:
+                                return collected
+                            if v not in seen_nodes:
+                                seen_nodes.add(v)
+                                q.append(v)
+                return collected
 
-                    #remove the connection of predessesor to inyteraction node and send that node cell so that it can be set to high resistive state
-                    for node in intersection:
-                        for parent in graph.predecessors(node): # find parents of that node - add a disjoint child node to parents
-                            disjoint_nodes_to_be_added.append((parent, node))
+            def child_edges1(graph, edge_set, target_set):
+                src_nxt = {}
+                for u, v in edge_set:               # (u → v) is in the current frontier
+                    for w in graph.successors(v):   # follow v’s outgoing edges
+                        if((v,w) not in target_set):
+                            continue
+                        if (u,v) not in src_nxt:
+                            src_nxt[(u,v)] = set()
+                        src_nxt[(u,v)].add((v, w))
+                return src_nxt
+            
+            def parent_edges1(graph, edge_set, target_set):
+                snk_nxt = {}
+                for u, v in edge_set:               # (u → v) is in the current frontier
+                    for w in graph.predecessors(u):  # walk *backwards* to u’s predecessors
+                        if (w, u) not in target_set:
+                            continue
+                        if (u, v) not in snk_nxt:
+                            snk_nxt[(u, v)] = set()
+                        snk_nxt[(u, v)].add((w, u))  # store edge pointing *into* u
+                return snk_nxt
 
-                    # Remove intersecting nodes from next queues to avoid further traversal
-                    queue_input = deque([node for node in queue_input if node not in intersection])
-                    queue_output = deque([node for node in queue_output if node not in intersection])
+            # print('subgraph', [node for node in subgraph.nodes])
+            # print('source',source)
+            src_half  = bfs_edges_forward(subgraph, source, half_k)   # from the source side
+            snk_half  = bfs_edges_backward(subgraph, sink,   half_k)  # from the sink side
+
+            # --------------------------------------------------
+            # 3.  intersection of the two edge sets
+            # --------------------------------------------------
+            middle_edges = src_half & snk_half
+            
+            src_half = src_half - middle_edges
+            snk_half = snk_half - middle_edges
+
+            src_nxt_map = child_edges1(subgraph, src_half, snk_half)
+            snk_nxt_map = parent_edges1(subgraph, snk_half, src_half)
+
+            # --------------------------------------------------
+            # 4.  Remove overlapping nodes
+            # --------------------------------------------------
+            while(src_nxt_map or snk_nxt_map):
+                if(len(src_half)==len(snk_half) or len(src_half)<len(snk_half)):
+                    (parent_edge, backref_edges) = next(iter(snk_nxt_map.items()))
                     
-                next_input_layer -= intersection
-                # next_output_layer -= intersection
+                    removing_edge = parent_edge
+                    
+                    snk_half -= {removing_edge}
+                    del_values = snk_nxt_map[removing_edge]
+                    del snk_nxt_map[removing_edge]
+                    
+                    for del_value in del_values:
+                        if del_value in src_nxt_map:
+                            src_nxt_map[del_value] -= {removing_edge}
+                            if not src_nxt_map[del_value]:
+                                del src_nxt_map[del_value]
+                    
+                elif(len(src_half)>len(snk_half)):
+                    (parent_edge, forward_edges) = next(iter(src_nxt_map.items()))
+                    removing_edge = parent_edge
+            
+                    # Remove from source half and clean maps
+                    src_half -= {removing_edge}
+                    del_values = src_nxt_map[removing_edge]
+                    del src_nxt_map[removing_edge]
+            
+                    for del_value in del_values:
+                        if del_value in snk_nxt_map:
+                            snk_nxt_map[del_value] -= {removing_edge}
+                            if not snk_nxt_map[del_value]:
+                                del snk_nxt_map[del_value]
 
+            # Merge final edges from both halves
+            final_edges = src_half | snk_half
+
+            # Create a new graph with only those edges
+            disjoint_graph = nx.DiGraph()
+            disjoint_graph.add_edges_from(final_edges)
+            
+            # Add attributes from the original subgraph
+            for u, v in final_edges:
+                if subgraph.has_edge(u, v):
+                    disjoint_graph[u][v].update(subgraph[u][v])
+            for node in disjoint_graph.nodes:
+                if subgraph.has_node(node):
+                    disjoint_graph.nodes[node].update(subgraph.nodes[node])
+                                
             outputNodeLabel = graph.nodes[output].get('literal', '')
-
-            # print('--------------------------------------------------------')
-
-            #inputs that need to be disabled
-            graph_copy = copy.deepcopy(graph)
-            disable_input_lst = self.find_input_nodes_of_paths(graph_copy, input_nodes, output, disjoint_nodes_to_be_added)
-
-            # print('disable_input_lst',disable_input_lst)
-
-            disabledOutputsToInputs[outputNodeLabel] = {"disable_selector_lines":intersecting_nodes, 
-                                                        "disable_input_lines":disable_input_lst, 
-                                                        "disjoint_nodes_to_be_added":disjoint_nodes_to_be_added,
-                                                        "input_connected_nodes":next_input_layer,
-                                                        "output_connected_nodes":next_output_layer,
+            disabledOutputsToInputs[outputNodeLabel] = {"subgraph":subgraph,
+                                                        "disjoint_graph":disjoint_graph,
+                                                        "final_edges":final_edges,
+                                                        "src_half":src_half, 
+                                                        "snk_half":snk_half
                                                        }
 
-            current_input_nodes = list(set(input_nodes) - set(disable_input_lst))
-
             # Verify disconnection
-            graph_copy = copy.deepcopy(graph)
-            is_disconnected, problemPath = self.verify_disconnection(graph_copy, current_input_nodes, output, disjoint_nodes_to_be_added)
+            is_disconnected, problemPath = self.verify_disconnection(disjoint_graph, [input_node], output)
 
             if not is_disconnected:
                 print(problemPath)
@@ -1418,10 +1472,9 @@ class PATH:
         return disable_inputs_lst
                 
         
-    def verify_disconnection(self, graph, input_nodes, output_node, disabled_edges):
+    def verify_disconnection(self, graph, input_nodes, output_node):
         # Remove the intersecting (disabled) nodes from the graph copy
         # graph.remove_nodes_from(disabled_nodes)
-        graph.remove_edges_from(disabled_edges)
     
         # Check if any input node still has a path to the output node
         for input_node in input_nodes:

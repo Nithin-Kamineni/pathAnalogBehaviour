@@ -1,0 +1,16 @@
+.model alu_op_ext[1]
+.inputs opcode[2] opcode[4] opcode[3] opcode[0] opcode[1]
+.outputs alu_op_ext[1]
+.order opcode[2] opcode[1] opcode[0] opcode[3] opcode[4]
+.bdd
+3e5 3e0 3e4 opcode[2] alu_op_ext[1]
+3e0 38f 2d1 opcode[1]
+3e4 3e3 2d1 opcode[1]
+3e3 2d1 3a0 opcode[0]
+3a0 2d1 38d opcode[3]
+38f 38d 38e opcode[3]
+38e 2d1 2d0 opcode[4]
+38d 2d0 2d1 opcode[4]
+2d0 -1 -1 1
+2d1 -1 -1 0
+.end

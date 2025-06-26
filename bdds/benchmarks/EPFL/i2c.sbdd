@@ -1,0 +1,9 @@
+.model po002
+.inputs pi104
+.outputs po002
+.order pi104
+.bdd
+305a1 34709 3470a pi104 po002
+34709 -1 -1 1
+3470a -1 -1 0
+.end

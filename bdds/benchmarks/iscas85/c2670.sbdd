@@ -1,0 +1,9 @@
+.model G183
+.inputs IN-G183
+.outputs G183
+.order IN-G183
+.bdd
+1ae1 4977 4978 IN-G183 G183
+4977 -1 -1 1
+4978 -1 -1 0
+.end

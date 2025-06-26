@@ -210,24 +210,22 @@ class Bus:
                     wordLineInputs.append(wordLineInput)
                 
             design_ID,_ = design_ID_group
-            # print()
-            design_ID_item_lst = []
-            # print('design_ID',design_ID)
-            for design_ID_item in design_ID:
-                if(design_ID_item not in DesignIdItemToWordLineInputMap):  #make sure design_ID_item is in the following group
-                    continue
-                if(design_ID_item is None or design_ID_item in design_ID_item_activation_set):  #check if following word line needs to be activated
-                    for wordLineInput in DesignIdItemToWordLineInputMap[design_ID_item]:
-                        # print('wordLineInput_lst',wordLineInput_lst)
-                        # for wordLineInput in wordLineInput_lst:
-                        wordLineInputs.append(wordLineInput)  # Add mutiple wordline inputs of following design_ID
-                    design_ID_item_lst.append(design_ID_item)
-            # print('wordLineInputs',wordLineInputs)
+            
+            # design_ID_item_lst = []
+            # for design_ID_item in design_ID:
+            #     if(design_ID_item not in DesignIdItemToWordLineInputMap):  #make sure design_ID_item is in the following group
+            #         continue
+            #     if(design_ID_item is None or design_ID_item in design_ID_item_activation_set):  #check if following word line needs to be activated
+            #         for wordLineInput in DesignIdItemToWordLineInputMap[design_ID_item]:
+            #             # print('wordLineInput_lst',wordLineInput_lst)
+            #             # for wordLineInput in wordLineInput_lst:
+            #             wordLineInputs.append(wordLineInput)  # Add mutiple wordline inputs of following design_ID
+            #         design_ID_item_lst.append(design_ID_item)
 
             if(wordLineInputs==[]):
                 continue
             
-            selector_lines = crossbar_design.ActivateSelectorLines(input_assignment)
+            selector_lines = crossbar_design.ActivateSelectorLines(input_assignment, design_ID_item_activation_set)
 
             # print('wordLineInputs',wordLineInputs)
             
@@ -435,8 +433,7 @@ class PATH_Design_Logic_Verification:
             for j, row in enumerate(rows):
                 DesignIdToWordLineInputMap[split_id].append(row + row_start)
         
-        if(DesignIdToWordLineInputMap == {}):
-            DesignIdToWordLineInputMap[None] = [row_start]
+        DesignIdToWordLineInputMap[None] = [row_start]
         
         # Update Row/Col offsets
         self.RowOffSet = row_end
@@ -446,10 +443,18 @@ class PATH_Design_Logic_Verification:
         
         return DesignIdToWordLineInputMap, (col_start, col_end)
 
-    def ActivateSelectorLines(self, InputAssignmentMap):
+    def ActivateSelectorLines(self, InputAssignmentMap, design_ID_item_activation_set):
+        # print('design_ID_item_activation_set',design_ID_item_activation_set)
+        # print('self.SelectorLineLabels',self.SelectorLineLabels)
         #Selecting selector lines based on the InputAssignmentMap (Boolean literals)
         selector_lines = [0 for _ in self.SelectorLineLabels]
         for i, SelectorLineLabel in enumerate(self.SelectorLineLabels):
+            if(len(SelectorLineLabel)>20):
+                if(SelectorLineLabel in design_ID_item_activation_set): #this input selectorline
+                    selector_lines[i] = 1
+                    # print('came here',i,SelectorLineLabel)
+                continue
+                
             if('O' not in SelectorLineLabel):
                 if('~'==SelectorLineLabel[0] and InputAssignmentMap[SelectorLineLabel[1:]]==0):
                     selector_lines[i] = 1

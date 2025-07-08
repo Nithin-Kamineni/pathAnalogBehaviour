@@ -62,6 +62,13 @@ class PATH:
         self.OutputLine_Map = {}
         self.Topological_order = []  #design_ID_groups - order of execution
 
+        self.PathName = None
+        self.directoryName = None
+
+    def setNames(self, name, directory):
+        self.PathName = name
+        self.directoryName = directory
+
     def parse_file_to_NetworkXGraph(self, filename):
         """ Reads the file and extracts nodes, variables, and outputs. """
         self.filename = filename
@@ -820,7 +827,7 @@ class PATH:
                     output_node_to_literal_map[u1_node] = []
                 output_node_to_literal_map[u1_node].append({'split_id':split_id, 'literal':literal, 'added_output_node_id':added_output_node_id, 'endingNodeLabel':endingNodeLabel})
                 
-        print(1, len(inverse_map_graph_chunk_1), len(inverse_map_graph_chunk_2))
+        # print(1, len(inverse_map_graph_chunk_1), len(inverse_map_graph_chunk_2))
         
         # Step 9: Create split graphs from inverse_map_graph_chunk_1 and inverse_map_graph_chunk_2
         split_graphs = []
@@ -839,7 +846,7 @@ class PATH:
             for u1_node in u1_parents:
                 subgraph_nodes.add(u1_node)
             split_graph_present = True  # Flag for nodes in subgraph_nodes
-                
+
             # Step 9.2.2: Find descendants of the U2 node in the full graph (excluding already included nodes)
             pending = deque([u2_child])
             while pending:
@@ -849,14 +856,16 @@ class PATH:
                     # print('child1', child)
                     # print(child not in split_graph_included_nodes)
                     # print(child not in subgraph_nodes)
-                    if child not in split_graph_included_nodes:
+                    
+                    # if child not in split_graph_included_nodes:  #before
+                    if child not in split_graph_included_nodes and child not in subgraph_nodes:
                         # print('child2', child)
                         pending.append(child)
 
             # Step 9.2.3: Record included nodes of split graph
             split_graph_included_nodes.update(subgraph_nodes)
 
-        print(123456)
+        # print(123456)
 
         # Step 9.3: split_nodes that have successor connections from U2 node (only include successor U1 node of U2_parent)
         for u2_parent, u1_children in inverse_map_graph_chunk_2.items():
@@ -1302,6 +1311,7 @@ class PATH:
             # Create a subgraph and make a deep copy
             subgraph = graph.subgraph(relevant_nodes).copy()
 
+            print('output0',output in subgraph.nodes)
             sink = output
 
             # --------------------------------------------------
@@ -1386,6 +1396,10 @@ class PATH:
             src_half = src_half - middle_edges
             snk_half = snk_half - middle_edges
 
+            print('middle_edges', output in {node for nodes in middle_edges for node in nodes})
+            print('src_half', output in {node for nodes in src_half for node in nodes})
+            print('snk_half', output in {node for nodes in snk_half for node in nodes})
+
             src_nxt_map = child_edges1(subgraph, src_half, snk_half)
             snk_nxt_map = parent_edges1(subgraph, snk_half, src_half)
 
@@ -1437,6 +1451,8 @@ class PATH:
             for node in disjoint_graph.nodes:
                 if subgraph.has_node(node):
                     disjoint_graph.nodes[node].update(subgraph.nodes[node])
+                else:
+                    print('big erorrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr')
                                 
             outputNodeLabel = graph.nodes[output].get('literal', '')
             disabledOutputsToInputs[outputNodeLabel] = {"subgraph":subgraph,
@@ -1446,6 +1462,9 @@ class PATH:
                                                         "snk_half":snk_half
                                                        }
 
+            # print('input', input_node in disjoint_graph.nodes)
+            print('output', output in disjoint_graph.nodes)
+            
             # Verify disconnection
             is_disconnected, problemPath = self.verify_disconnection(disjoint_graph, [input_node], output)
 
